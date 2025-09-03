@@ -1,19 +1,33 @@
 import React, { useState } from 'react';
 import { Plus, Edit, FileText, CheckCircle, Clock, AlertTriangle } from 'lucide-react';
-import { Logbook } from '../../types';
-import { useAuth } from '../../contexts/AuthContext';
+import { Logbook as UILogbook } from '../../types';
+import ExportButton from '../ExportButton';
+import { usePermissions } from '../../hooks/usePermissions';
+import { reportService } from '../../services/api';
+import { downloadFile, getExportFilename, handleExportError } from '../../utils/downloadUtils';
 
 interface LogbookListProps {
-  logbooks: Logbook[];
-  onEdit: (logbook: Logbook) => void;
+  logbooks: UILogbook[];
+  onEdit: (logbook: UILogbook) => void;
   onNew: () => void;
 }
 
 const LogbookList: React.FC<LogbookListProps> = ({ logbooks, onEdit, onNew }) => {
-  const { user } = useAuth();
   const [filter, setFilter] = useState<'all' | 'pending' | 'validated'>('all');
+  const permissions = usePermissions();
 
-  const getStatusIcon = (logbook: Logbook) => {
+  const handleExportPDF = async (logbookId: number) => {
+    try {
+      const blob = await reportService.exportSingleLogbook(logbookId);
+      const filename = `carnet_de_bord_${logbookId}_${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.pdf`;
+      downloadFile(blob, filename);
+    } catch (error) {
+      console.error('Erreur lors de l\'export PDF:', error);
+      alert('Erreur lors de l\'export PDF. Veuillez réessayer.');
+    }
+  };
+
+  const getStatusIcon = (logbook: UILogbook) => {
     if (logbook.pilotValidated && logbook.logisticsValidated) {
       return <CheckCircle className="h-5 w-5 text-green-500" />;
     } else if (logbook.pilotValidated) {
@@ -23,7 +37,7 @@ const LogbookList: React.FC<LogbookListProps> = ({ logbooks, onEdit, onNew }) =>
     }
   };
 
-  const getStatusText = (logbook: Logbook) => {
+  const getStatusText = (logbook: UILogbook) => {
     if (logbook.pilotValidated && logbook.logisticsValidated) {
       return 'Validé';
     } else if (logbook.pilotValidated) {
@@ -49,13 +63,26 @@ const LogbookList: React.FC<LogbookListProps> = ({ logbooks, onEdit, onNew }) =>
           <h2 className="text-xl sm:text-2xl font-bold text-gray-900">Carnets de bord</h2>
           <p className="text-gray-600 mt-1 text-sm sm:text-base">Gérez les carnets de bord journaliers</p>
         </div>
-        <button
-          onClick={onNew}
-          className="flex items-center justify-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm sm:text-base"
-        >
-          <Plus className="h-4 w-4" />
-          <span>Nouveau carnet</span>
-        </button>
+        <div className="flex items-center space-x-2">
+          <ExportButton 
+            type="logbooks" 
+            filters={{
+              status: filter !== 'all' ? filter : undefined
+            }}
+            className="text-sm"
+          >
+            Exporter
+          </ExportButton>
+          {permissions.canFillLogbook && (
+            <button
+              onClick={onNew}
+              className="flex items-center justify-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm sm:text-base"
+            >
+              <Plus className="h-4 w-4" />
+              <span>Nouveau carnet</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Filtres */}
@@ -134,14 +161,19 @@ const LogbookList: React.FC<LogbookListProps> = ({ logbooks, onEdit, onNew }) =>
                       {getStatusText(logbook)}
                     </span>
                     <div className="flex items-center space-x-2">
-                      <button
-                        onClick={() => onEdit(logbook)}
-                        className="text-blue-600 hover:text-blue-900 flex items-center space-x-1 text-sm"
+                      {permissions.canFillLogbook && (
+                        <button
+                          onClick={() => onEdit(logbook)}
+                          className="text-blue-600 hover:text-blue-900 flex items-center space-x-1 text-sm"
+                        >
+                          <Edit className="h-4 w-4" />
+                          <span>Modifier</span>
+                        </button>
+                      )}
+                      <button 
+                        onClick={() => handleExportPDF(logbook.id)}
+                        className="text-green-600 hover:text-green-900 flex items-center space-x-1 text-sm"
                       >
-                        <Edit className="h-4 w-4" />
-                        <span>Modifier</span>
-                      </button>
-                      <button className="text-green-600 hover:text-green-900 flex items-center space-x-1 text-sm">
                         <FileText className="h-4 w-4" />
                         <span>PDF</span>
                       </button>
@@ -200,14 +232,19 @@ const LogbookList: React.FC<LogbookListProps> = ({ logbooks, onEdit, onNew }) =>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                       <div className="flex items-center space-x-2">
-                        <button
-                          onClick={() => onEdit(logbook)}
-                          className="text-blue-600 hover:text-blue-900 flex items-center space-x-1"
+                        {permissions.canFillLogbook && (
+                          <button
+                            onClick={() => onEdit(logbook)}
+                            className="text-blue-600 hover:text-blue-900 flex items-center space-x-1"
+                          >
+                            <Edit className="h-4 w-4" />
+                            <span>Modifier</span>
+                          </button>
+                        )}
+                        <button 
+                          onClick={() => handleExportPDF(logbook.id)}
+                          className="text-green-600 hover:text-green-900 flex items-center space-x-1"
                         >
-                          <Edit className="h-4 w-4" />
-                          <span>Modifier</span>
-                        </button>
-                        <button className="text-green-600 hover:text-green-900 flex items-center space-x-1">
                           <FileText className="h-4 w-4" />
                           <span>PDF</span>
                         </button>

@@ -1,46 +1,41 @@
-import React, { useState } from 'react';
-import { Plus, Trash2, Save, CheckCircle } from 'lucide-react';
-import { Logbook, SafetyChecklist, Trip, PIROGUES, LOCATIONS } from '../../types';
+import React, { useState, useEffect } from 'react';
+import { Plus, Trash2, Save } from 'lucide-react';
+import { Logbook as UILogbook, SafetyChecklist } from '../../types';
 import { useAuth } from '../../contexts/AuthContext';
+import { configServiceInstance } from '../../services/configService';
 
 interface LogbookFormProps {
-  logbook?: Logbook;
-  onSave: (logbook: Omit<Logbook, 'id' | 'createdAt'>) => void;
+  logbook?: UILogbook | null;
+  onSave: (logbook: Omit<UILogbook, 'id' | 'createdAt'>) => void;
   onCancel: () => void;
 }
 
 const LogbookForm: React.FC<LogbookFormProps> = ({ logbook, onSave, onCancel }) => {
   const { user } = useAuth();
-  const [formData, setFormData] = useState<Omit<Logbook, 'id' | 'createdAt'>>({
+  const [pirogues, setPirogues] = useState<string[]>([]);
+  const [locations, setLocations] = useState<string[]>([]);
+  const [safetyChecklistItems, setSafetyChecklistItems] = useState<Array<{key: string, label: string}>>([]);
+  const [formData, setFormData] = useState<Omit<UILogbook, 'id' | 'createdAt'>>({
     pirogue: logbook?.pirogue || '',
     pilot: logbook?.pilot || user?.fullName || '',
     copilot: logbook?.copilot || '',
     sailor: logbook?.sailor || '',
     date: logbook?.date || new Date(),
     safetyChecklist: logbook?.safetyChecklist || {
-      hullCondition: false,
-      roofCondition: false,
+      lifeJackets: false,
       fireExtinguisher: false,
-      flare: false,
-      flashlight: false,
       firstAidKit: false,
-      circuitBreaker: false,
-      vhfRadio: false,
-      bluRadio: false,
-      chekesFilter: false,
-      buoyWithRope: false,
-      fogRope: false,
-      scoop: false,
-      pole: false,
-      oars: false,
-      grapple: false,
+      emergencyFlares: false,
+      radio: false,
+      gps: false,
       anchor: false,
-      garbageBags: false,
-      sufficientVests: false,
-      signageVisible: false,
-      chartsAndProcedures: false,
-      spotsOperational: false,
-      backupSpots: false,
+      bilgePump: false,
+      fuelLevel: false,
+      engineCheck: false,
+      hullInspection: false,
+      weatherCheck: false,
+      passengerBriefing: false,
+      emergencyProcedures: false,
       toolboxMeeting: false,
       toolboxTheme: ''
     },
@@ -61,32 +56,7 @@ const LogbookForm: React.FC<LogbookFormProps> = ({ logbook, onSave, onCancel }) 
     logisticsValidated: logbook?.logisticsValidated || false
   });
 
-  const safetyChecklistItems = [
-    { key: 'hullCondition', label: 'Coque en bon état' },
-    { key: 'roofCondition', label: 'Toit en bon état' },
-    { key: 'fireExtinguisher', label: 'Extincteur 2kg' },
-    { key: 'flare', label: 'Fusée de détresse' },
-    { key: 'flashlight', label: 'Lampe torche' },
-    { key: 'firstAidKit', label: 'Trousse à pharmacie' },
-    { key: 'circuitBreaker', label: 'Coupe circuit' },
-    { key: 'vhfRadio', label: 'Radio VHF' },
-    { key: 'bluRadio', label: 'Radio BLU' },
-    { key: 'chekesFilter', label: 'Filtre Chekes' },
-    { key: 'buoyWithRope', label: 'Bouée avec corde de 10m' },
-    { key: 'fogRope', label: 'Corde de brume' },
-    { key: 'scoop', label: 'Écope' },
-    { key: 'pole', label: 'Gaffe' },
-    { key: 'oars', label: 'Rames' },
-    { key: 'grapple', label: 'Grappin' },
-    { key: 'anchor', label: 'Ancre' },
-    { key: 'garbageBags', label: 'Sacs poubelles' },
-    { key: 'sufficientVests', label: 'Gilets suffisants pour le nombre de passagers' },
-    { key: 'signageVisible', label: 'Signalétique visible : "Nbr de pax", "Ne pas fumer", "Gilet obligatoire"' },
-    { key: 'chartsAndProcedures', label: 'Cartes et mini procédures' },
-    { key: 'spotsOperational', label: 'Spots opérationnels' },
-    { key: 'backupSpots', label: 'Spots piles de secours' },
-    { key: 'toolboxMeeting', label: 'Toolbox Meeting effectué ?' }
-  ];
+
 
   const handleChecklistChange = (key: keyof SafetyChecklist, value: boolean) => {
     setFormData(prev => ({
@@ -106,6 +76,25 @@ const LogbookForm: React.FC<LogbookFormProps> = ({ logbook, onSave, onCancel }) 
     };
     setFormData(prev => ({ ...prev, trips: updatedTrips }));
   };
+
+  useEffect(() => {
+    const loadConfig = async () => {
+      try {
+        const [piroguesData, locationsData, safetyChecklistData] = await Promise.all([
+          configServiceInstance.getPirogues(),
+          configServiceInstance.getLocations(),
+          configServiceInstance.getSafetyChecklistItems()
+        ]);
+        setPirogues(piroguesData);
+        setLocations(locationsData);
+        setSafetyChecklistItems(safetyChecklistData);
+      } catch (error) {
+        console.error('Erreur lors du chargement de la configuration:', error);
+      }
+    };
+
+    loadConfig();
+  }, []);
 
   const addTrip = () => {
     if (formData.trips.length < 4) {
@@ -162,8 +151,8 @@ const LogbookForm: React.FC<LogbookFormProps> = ({ logbook, onSave, onCancel }) 
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base"
               required
             >
-              <option value="">Sélectionner une pirogue</option>
-              {PIROGUES.map(pirogue => (
+              <option key="select-pirogue" value="">Sélectionner une pirogue</option>
+              {pirogues.map(pirogue => (
                 <option key={pirogue} value={pirogue}>{pirogue}</option>
               ))}
             </select>
@@ -305,8 +294,8 @@ const LogbookForm: React.FC<LogbookFormProps> = ({ logbook, onSave, onCancel }) 
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
                       required
                     >
-                      <option value="">Sélectionner</option>
-                      {LOCATIONS.map(location => (
+                      <option key="select-departure" value="">Sélectionner</option>
+                      {locations.map(location => (
                         <option key={location} value={location}>{location}</option>
                       ))}
                     </select>
@@ -350,10 +339,10 @@ const LogbookForm: React.FC<LogbookFormProps> = ({ logbook, onSave, onCancel }) 
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
                       required
                     >
-                      <option value="">Sélectionner</option>
-                      {LOCATIONS.map(location => (
-                        <option key={location} value={location}>{location}</option>
-                      ))}
+                      <option key="select-arrival" value="">Sélectionner</option>
+                {locations.map(location => (
+                  <option key={location} value={location}>{location}</option>
+                ))}
                     </select>
                   </div>
 

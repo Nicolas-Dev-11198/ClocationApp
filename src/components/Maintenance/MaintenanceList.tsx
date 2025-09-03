@@ -1,7 +1,10 @@
 import React, { useState } from 'react';
 import { Plus, Edit, FileText, CheckCircle, Clock, AlertTriangle, Wrench } from 'lucide-react';
 import { MaintenanceSheet } from '../../types';
-import { useAuth } from '../../contexts/AuthContext';
+import ExportButton from '../ExportButton';
+import { usePermissions } from '../../hooks/usePermissions';
+import { reportService } from '../../services/api';
+import { downloadFile } from '../../utils/downloadUtils';
 
 interface MaintenanceListProps {
   maintenanceSheets: MaintenanceSheet[];
@@ -10,8 +13,19 @@ interface MaintenanceListProps {
 }
 
 const MaintenanceList: React.FC<MaintenanceListProps> = ({ maintenanceSheets, onEdit, onNew }) => {
-  const { user } = useAuth();
   const [filter, setFilter] = useState<'all' | 'pending' | 'validated'>('all');
+  const permissions = usePermissions();
+
+  const handleExportPDF = async (maintenanceId: number) => {
+    try {
+      const blob = await reportService.exportSingleMaintenance(maintenanceId);
+      const filename = `maintenance_${maintenanceId}_${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.pdf`;
+      downloadFile(blob, filename);
+    } catch (error) {
+      console.error('Erreur lors de l\'export PDF:', error);
+      alert('Erreur lors de l\'export PDF. Veuillez réessayer.');
+    }
+  };
 
   const getStatusIcon = (sheet: MaintenanceSheet) => {
     if (sheet.mechanicValidated && sheet.pilotValidated && sheet.hseValidated) {
@@ -58,13 +72,26 @@ const MaintenanceList: React.FC<MaintenanceListProps> = ({ maintenanceSheets, on
           <h2 className="text-xl sm:text-2xl font-bold text-gray-900">Fiches de maintenance</h2>
           <p className="text-gray-600 mt-1 text-sm sm:text-base">Gérez les interventions de maintenance</p>
         </div>
-        <button
-          onClick={onNew}
-          className="flex items-center justify-center space-x-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors text-sm sm:text-base"
-        >
-          <Plus className="h-4 w-4" />
-          <span>Nouvelle fiche</span>
-        </button>
+        <div className="flex items-center space-x-2">
+          <ExportButton 
+            type="maintenances" 
+            filters={{
+              status: filter !== 'all' ? filter : undefined
+            }}
+            className="text-sm"
+          >
+            Exporter
+          </ExportButton>
+          {permissions.canFillMaintenance && (
+            <button
+              onClick={onNew}
+              className="flex items-center justify-center space-x-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors text-sm sm:text-base"
+            >
+              <Plus className="h-4 w-4" />
+              <span>Nouvelle fiche</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Filtres */}
@@ -148,14 +175,19 @@ const MaintenanceList: React.FC<MaintenanceListProps> = ({ maintenanceSheets, on
                       {getStatusText(sheet)}
                     </span>
                     <div className="flex items-center space-x-2">
-                      <button
-                        onClick={() => onEdit(sheet)}
-                        className="text-orange-600 hover:text-orange-900 flex items-center space-x-1 text-sm"
+                      {permissions.canFillMaintenance && (
+                        <button
+                          onClick={() => onEdit(sheet)}
+                          className="text-orange-600 hover:text-orange-900 flex items-center space-x-1 text-sm"
+                        >
+                          <Edit className="h-4 w-4" />
+                          <span>Modifier</span>
+                        </button>
+                      )}
+                      <button 
+                        onClick={() => handleExportPDF(sheet.id)}
+                        className="text-green-600 hover:text-green-900 flex items-center space-x-1 text-sm"
                       >
-                        <Edit className="h-4 w-4" />
-                        <span>Modifier</span>
-                      </button>
-                      <button className="text-green-600 hover:text-green-900 flex items-center space-x-1 text-sm">
                         <FileText className="h-4 w-4" />
                         <span>PDF</span>
                       </button>
@@ -220,14 +252,19 @@ const MaintenanceList: React.FC<MaintenanceListProps> = ({ maintenanceSheets, on
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                       <div className="flex items-center space-x-2">
-                        <button
-                          onClick={() => onEdit(sheet)}
-                          className="text-orange-600 hover:text-orange-900 flex items-center space-x-1"
+                        {permissions.canFillMaintenance && (
+                          <button
+                            onClick={() => onEdit(sheet)}
+                            className="text-orange-600 hover:text-orange-900 flex items-center space-x-1"
+                          >
+                            <Edit className="h-4 w-4" />
+                            <span>Modifier</span>
+                          </button>
+                        )}
+                        <button 
+                          onClick={() => handleExportPDF(sheet.id)}
+                          className="text-green-600 hover:text-green-900 flex items-center space-x-1"
                         >
-                          <Edit className="h-4 w-4" />
-                          <span>Modifier</span>
-                        </button>
-                        <button className="text-green-600 hover:text-green-900 flex items-center space-x-1">
                           <FileText className="h-4 w-4" />
                           <span>PDF</span>
                         </button>

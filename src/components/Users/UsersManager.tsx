@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Users, 
-  UserPlus, 
   Edit, 
   Check, 
   X, 
@@ -12,14 +11,32 @@ import {
   Filter
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
-import { User, UserRole, ROLE_LABELS } from '../../types';
+import { usePermissions } from '../../hooks/usePermissions';
+import { User, ROLE_LABELS } from '../../types';
+import { HRData, PaginatedResponse } from '../../types/api';
+import { userService } from '../../services/api';
+import Pagination from '../common/Pagination';
+import { useToast } from '../../contexts/ToastContext';
+
+type UserFilter = 'all' | 'active' | 'pending' | 'inactive';
 
 const UsersManager: React.FC = () => {
-  const { user: currentUser, getAllUsers, updateUserStatus, updateUserHRData } = useAuth();
+  const { user: currentUser } = useAuth();
+  const permissions = usePermissions();
   const [users, setUsers] = useState<User[]>([]);
-  const [filter, setFilter] = useState<'all' | 'active' | 'pending' | 'inactive'>('all');
+  const [filter, setFilter] = useState<UserFilter>('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [pagination, setPagination] = useState({
+    current_page: 1,
+    last_page: 1,
+    per_page: 5,
+    total: 0,
+    from: 0,
+    to: 0
+  });
+  const { showToast } = useToast();
   const [hrFormData, setHrFormData] = useState({
     contractStart: '',
     contractEnd: '',
@@ -33,21 +50,80 @@ const UsersManager: React.FC = () => {
     payrollNumber: ''
   });
 
-  useEffect(() => {
-    setUsers(getAllUsers());
-  }, [getAllUsers]);
-
-  const handleApproveUser = (userId: string) => {
-    updateUserStatus(userId, true);
-    setUsers(getAllUsers());
+  const loadUsers = async (page: number = 1, perPage: number = 5, currentFilter: UserFilter = filter, currentSearch: string = searchTerm) => {
+    try {
+      setLoading(true);
+      const params = {
+        page,
+        per_page: perPage,
+        ...(currentFilter !== 'all' && { status: currentFilter }),
+        ...(currentSearch && { search: currentSearch })
+      };
+      const response: PaginatedResponse<User> = await userService.getAll(params);
+      setUsers(response.data);
+      setPagination(response.pagination);
+    } catch (error) {
+      console.error('Failed to load users:', error);
+      showToast('error', 'Erreur lors du chargement des utilisateurs');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleRejectUser = (userId: string) => {
-    updateUserStatus(userId, false);
-    setUsers(getAllUsers());
+  const updateUserStatus = async (userId: string, status: string) => {
+    try {
+      await userService.updateUserStatus(parseInt(userId), status);
+      showToast('success', 'Statut utilisateur mis à jour');
+      loadUsers(pagination.current_page, pagination.per_page);
+    } catch (error) {
+      console.error('Failed to update user status:', error);
+      showToast('error', 'Erreur lors de la mise à jour du statut');
+    }
+  };
+
+  const saveHRData = async (userId: string, hrData: HRData) => {
+    try {
+      await userService.updateUser(userId, { hrData });
+      showToast('success', 'Données RH sauvegardées');
+      loadUsers(pagination.current_page, pagination.per_page);
+      setEditingUser(null);
+    } catch (error) {
+      console.error('Failed to save HR data:', error);
+      showToast('error', 'Erreur lors de la sauvegarde des données RH');
+    }
+  };
+
+  useEffect(() => {
+    loadUsers();
+  }, []);
+
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      loadUsers(1, pagination.per_page, filter, searchTerm);
+    }, 300);
+    return () => clearTimeout(timeoutId);
+  }, [searchTerm, filter]);
+
+  const handleApproveUser = async (userId: string) => {
+    if (!permissions.canApproveUsers) return;
+    await updateUserStatus(userId, 'approved');
+  };
+
+  const handleRejectUser = async (userId: string) => {
+    if (!permissions.canApproveUsers) return;
+    await updateUserStatus(userId, 'rejected');
+  };
+
+  const handlePageChange = (page: number) => {
+    loadUsers(page, pagination.per_page, filter, searchTerm);
+  };
+
+  const handlePerPageChange = (perPage: number) => {
+    loadUsers(1, perPage, filter, searchTerm);
   };
 
   const handleEditHRData = (user: User) => {
+    if (!permissions.canManageUsers) return;
     setEditingUser(user);
     setHrFormData({
       contractStart: user.hrData?.contractStart ? new Date(user.hrData.contractStart).toISOString().split('T')[0] : '',
@@ -63,8 +139,8 @@ const UsersManager: React.FC = () => {
     });
   };
 
-  const handleSaveHRData = () => {
-    if (!editingUser) return;
+  const handleSaveHRData = async () => {
+    if (!editingUser || !permissions.canManageUsers) return;
 
     const hrData = {
       contractStart: hrFormData.contractStart ? new Date(hrFormData.contractStart) : undefined,
@@ -79,9 +155,7 @@ const UsersManager: React.FC = () => {
       payrollNumber: hrFormData.payrollNumber
     };
 
-    updateUserHRData(editingUser.id, hrData);
-    setUsers(getAllUsers());
-    setEditingUser(null);
+    await saveHRData(editingUser.id, hrData);
   };
 
   const getExpirationWarnings = (user: User) => {
@@ -109,28 +183,10 @@ const UsersManager: React.FC = () => {
     return warnings;
   };
 
-  const filteredUsers = users.filter(user => {
-    const matchesSearch = user.fullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         user.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         ROLE_LABELS[user.role].toLowerCase().includes(searchTerm.toLowerCase());
+  // Les utilisateurs sont déjà filtrés côté serveur
+  const filteredUsers = users;
 
-    const matchesFilter = (() => {
-      switch (filter) {
-        case 'active':
-          return user.isActive;
-        case 'pending':
-          return !user.isActive && user.id !== '1'; // Exclude default admin
-        case 'inactive':
-          return !user.isActive;
-        default:
-          return true;
-      }
-    })();
-
-    return matchesSearch && matchesFilter;
-  });
-
-  if (currentUser?.role !== 'drh' && currentUser?.role !== 'directeur') {
+  if (!permissions.canManageUsers) {
     return (
       <div className="text-center py-8">
         <Users className="mx-auto h-12 w-12 text-gray-400 mb-4" />
@@ -142,8 +198,21 @@ const UsersManager: React.FC = () => {
     );
   }
 
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Chargement des utilisateurs...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
+
+      
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between space-y-4 sm:space-y-0">
         <div>
@@ -176,13 +245,13 @@ const UsersManager: React.FC = () => {
             </label>
             <select
               value={filter}
-              onChange={(e) => setFilter(e.target.value as any)}
+              onChange={(e) => setFilter(e.target.value as UserFilter)}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
             >
-              <option value="all">Tous</option>
-              <option value="active">Actifs</option>
-              <option value="pending">En attente</option>
-              <option value="inactive">Inactifs</option>
+              <option key="all" value="all">Tous</option>
+              <option key="active" value="active">Actifs</option>
+              <option key="pending" value="pending">En attente</option>
+              <option key="inactive" value="inactive">Inactifs</option>
             </select>
           </div>
         </div>
@@ -227,7 +296,7 @@ const UsersManager: React.FC = () => {
                         <p className="text-yellow-700 font-medium">Alertes d'expiration:</p>
                         {warnings.map((warning, idx) => (
                           <p key={idx} className="text-yellow-600">
-                            {warning.label}: {warning.date.toLocaleDateString('fr-FR')}
+                            {warning.label}: {warning.date ? new Date(warning.date).toLocaleDateString('fr-FR') : 'Non renseigné'}
                           </p>
                         ))}
                       </div>
@@ -235,7 +304,7 @@ const UsersManager: React.FC = () => {
 
                     <div className="flex items-center justify-between">
                       <span className="text-xs text-gray-500">
-                        Inscrit le {user.createdAt.toLocaleDateString('fr-FR')}
+                        Inscrit le {user.createdAt ? new Date(user.createdAt).toLocaleDateString('fr-FR') : 'Non renseigné'}
                       </span>
                       <div className="flex items-center space-x-2">
                         {!user.isActive && user.id !== '1' && (
@@ -313,7 +382,7 @@ const UsersManager: React.FC = () => {
                         </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {user.createdAt.toLocaleDateString('fr-FR')}
+                        {user.createdAt ? new Date(user.createdAt).toLocaleDateString('fr-FR') : 'Non renseigné'}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         {warnings.length > 0 ? (
@@ -327,7 +396,7 @@ const UsersManager: React.FC = () => {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                         <div className="flex items-center space-x-2">
-                          {!user.isActive && user.id !== '1' && (
+                          {!user.isActive && user.id !== '1' && permissions.canApproveUsers && (
                             <>
                               <button
                                 onClick={() => handleApproveUser(user.id)}
@@ -345,13 +414,15 @@ const UsersManager: React.FC = () => {
                               </button>
                             </>
                           )}
-                          <button
-                            onClick={() => handleEditHRData(user)}
-                            className="text-blue-600 hover:text-blue-900"
-                            title="Modifier données RH"
-                          >
-                            <Edit className="h-4 w-4" />
-                          </button>
+                          {permissions.canManageUsers && (
+                            <button
+                              onClick={() => handleEditHRData(user)}
+                              className="text-blue-600 hover:text-blue-900"
+                              title="Modifier données RH"
+                            >
+                              <Edit className="h-4 w-4" />
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -359,6 +430,17 @@ const UsersManager: React.FC = () => {
                 })}
               </tbody>
             </table>
+          </div>
+        )}
+        
+        {/* Pagination */}
+        {filteredUsers.length > 0 && (
+          <div className="border-t border-gray-200 px-6 py-4">
+            <Pagination
+              pagination={pagination}
+              onPageChange={handlePageChange}
+              onPerPageChange={handlePerPageChange}
+            />
           </div>
         )}
       </div>

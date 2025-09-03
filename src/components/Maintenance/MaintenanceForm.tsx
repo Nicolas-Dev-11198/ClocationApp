@@ -1,16 +1,21 @@
-import React, { useState } from 'react';
-import { Plus, Trash2, Save, CheckCircle, Wrench } from 'lucide-react';
-import { MaintenanceSheet, PIROGUES, LOCATIONS } from '../../types';
+import React, { useState, useEffect } from 'react';
+import { Save, Wrench } from 'lucide-react';
+import { MaintenanceSheet } from '../../types';
 import { useAuth } from '../../contexts/AuthContext';
+import { configServiceInstance } from '../../services/configService';
 
 interface MaintenanceFormProps {
-  maintenanceSheet?: MaintenanceSheet;
+  maintenanceSheet?: MaintenanceSheet | null;
   onSave: (sheet: Omit<MaintenanceSheet, 'id' | 'createdAt'>) => void;
   onCancel: () => void;
 }
 
 const MaintenanceForm: React.FC<MaintenanceFormProps> = ({ maintenanceSheet, onSave, onCancel }) => {
   const { user } = useAuth();
+  const [pirogues, setPirogues] = useState<string[]>([]);
+  const [locations, setLocations] = useState<string[]>([]);
+  const [interventionTypes, setInterventionTypes] = useState<Array<{value: string, label: string}>>([]);
+  const [motorBrands, setMotorBrands] = useState<Array<{value: string, label: string}>>([]);
   const [formData, setFormData] = useState<Omit<MaintenanceSheet, 'id' | 'createdAt'>>({
     location: maintenanceSheet?.location || '',
     pirogue: maintenanceSheet?.pirogue || '',
@@ -28,21 +33,33 @@ const MaintenanceForm: React.FC<MaintenanceFormProps> = ({ maintenanceSheet, onS
     hseValidated: maintenanceSheet?.hseValidated || false
   });
 
+  useEffect(() => {
+    const loadConfig = async () => {
+      try {
+        const [piroguesData, locationsData, interventionTypesData, motorBrandsData] = await Promise.all([
+          configServiceInstance.getPirogues(),
+          configServiceInstance.getLocations(),
+          configServiceInstance.getInterventionTypes(),
+          configServiceInstance.getMotorBrands()
+        ]);
+        setPirogues(piroguesData);
+        setLocations(locationsData);
+        setInterventionTypes(interventionTypesData);
+        setMotorBrands(motorBrandsData);
+      } catch (error) {
+        console.error('Error loading config data:', error);
+      }
+    };
+
+    loadConfig();
+  }, []);
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     onSave(formData);
   };
 
-  const interventionTypes = [
-    { value: 'diagnostic', label: 'Diagnostic' },
-    { value: 'reparation', label: 'Réparation' },
-    { value: 'maintenance', label: 'Maintenance préventive' }
-  ];
 
-  const motorBrands = [
-    { value: 'Yamaha', label: 'Yamaha' },
-    { value: 'Suzuki', label: 'Suzuki' }
-  ];
 
   return (
     <div className="max-w-4xl mx-auto bg-white rounded-lg shadow-sm border border-gray-200">
@@ -68,9 +85,9 @@ const MaintenanceForm: React.FC<MaintenanceFormProps> = ({ maintenanceSheet, onS
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent text-sm sm:text-base"
               required
             >
-              <option value="">Sélectionner un lieu</option>
-              <option value="Base">Base</option>
-              {LOCATIONS.map(location => (
+              <option key="select-location" value="">Sélectionner un lieu</option>
+            <option key="Base" value="Base">Base</option>
+              {locations.map(location => (
                 <option key={location} value={location}>{location}</option>
               ))}
             </select>
@@ -86,8 +103,8 @@ const MaintenanceForm: React.FC<MaintenanceFormProps> = ({ maintenanceSheet, onS
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent text-sm sm:text-base"
               required
             >
-              <option value="">Sélectionner une pirogue</option>
-              {PIROGUES.map(pirogue => (
+              <option key="select-pirogue" value="">Sélectionner une pirogue</option>
+              {pirogues.map(pirogue => (
                 <option key={pirogue} value={pirogue}>{pirogue}</option>
               ))}
             </select>
@@ -128,7 +145,7 @@ const MaintenanceForm: React.FC<MaintenanceFormProps> = ({ maintenanceSheet, onS
             </label>
             <select
               value={formData.interventionType}
-              onChange={(e) => setFormData(prev => ({ ...prev, interventionType: e.target.value as any }))}
+              onChange={(e) => setFormData(prev => ({ ...prev, interventionType: e.target.value as 'diagnostic' | 'reparation' | 'maintenance' }))}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent text-sm sm:text-base"
               required
             >

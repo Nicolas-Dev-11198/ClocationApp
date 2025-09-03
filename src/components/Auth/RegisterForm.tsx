@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { UserPlus, ArrowLeft } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { UserRole, ROLE_LABELS } from '../../types';
+import { configServiceInstance } from '../../services/configService';
 
 interface RegisterFormProps {
   onShowLogin: () => void;
@@ -15,12 +16,23 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ onShowLogin }) => {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [allowedRoles, setAllowedRoles] = useState<UserRole[]>([]);
   const { register } = useAuth();
 
-  const allowedRoles: UserRole[] = ['pilote', 'mecanicien', 'responsable_logistique'];
+  useEffect(() => {
+    const loadAllowedRoles = async () => {
+      try {
+        const roles = await configServiceInstance.getAllowedRoles();
+        setAllowedRoles(roles);
+      } catch {
+        console.error('Error loading allowed roles');
+      }
+    };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+    loadAllowedRoles();
+  }, []);
+
+  const handleSubmit = async () => {
     setLoading(true);
     setError('');
     setSuccess(false);
@@ -48,7 +60,7 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ onShowLogin }) => {
       } else {
         setError('Un utilisateur avec ce nom existe déjà');
       }
-    } catch (err) {
+    } catch {
       setError('Erreur lors de l\'inscription');
     } finally {
       setLoading(false);
@@ -99,7 +111,7 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ onShowLogin }) => {
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-6">
+          <form className="space-y-6">
             <div>
               <label htmlFor="fullName" className="block text-sm font-medium text-gray-700 mb-2">
                 Nom complet
@@ -167,7 +179,8 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ onShowLogin }) => {
             </div>
 
             <button
-              type="submit"
+              type="button"
+              onClick={handleSubmit}
               disabled={loading}
               className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg font-medium hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center space-x-2"
             >

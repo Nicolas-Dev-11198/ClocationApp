@@ -7,24 +7,17 @@ interface LoginFormProps {
 }
 
 const LoginForm: React.FC<LoginFormProps> = ({ onShowRegister }) => {
-  const [fullName, setFullName] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const { login } = useAuth();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    setError('');
 
     try {
-      const success = await login(fullName, password);
-      if (!success) {
-        setError('Nom d\'utilisateur ou mot de passe incorrect');
-      }
-    } catch (err) {
-      setError('Erreur de connexion');
+      await login(email, password);
     } finally {
       setLoading(false);
     }
@@ -42,25 +35,21 @@ const LoginForm: React.FC<LoginFormProps> = ({ onShowRegister }) => {
             <p className="text-gray-600 mt-2">Gestion de Flotte de Pirogues</p>
           </div>
 
-          {error && (
-            <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
-              <p className="text-red-800 text-sm">{error}</p>
-            </div>
-          )}
+
 
           <form onSubmit={handleSubmit} className="space-y-6">
             <div>
-              <label htmlFor="fullName" className="block text-sm font-medium text-gray-700 mb-2">
-                Nom complet
+              <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-2">
+                Email
               </label>
               <input
-                type="text"
-                id="fullName"
-                value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
+                type="email"
+                id="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
                 required
-                placeholder="Votre nom complet"
+                placeholder="Votre email"
               />
             </div>
 

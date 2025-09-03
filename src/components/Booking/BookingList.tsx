@@ -1,33 +1,51 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Plus, 
   Edit, 
   FileText, 
   Calendar, 
-  Clock, 
   Users, 
   MapPin,
-  AlertTriangle,
-  CheckCircle,
-  Download,
   Trash2,
   Upload
 } from 'lucide-react';
-import { Booking, PIROGUES } from '../../types';
+import { Booking } from '../../types/api';
+import { Booking as UIBooking } from '../../types';
+import { configServiceInstance } from '../../services/configService';
 import { useAuth } from '../../contexts/AuthContext';
+import ExportButton from '../ExportButton';
+
+type PriorityFilter = 'all' | 'Haute' | 'Moyenne' | 'Basse';
 
 interface BookingListProps {
-  bookings: Booking[];
-  onEdit: (booking: Booking) => void;
+  bookings: UIBooking[];
+  onEdit: (booking: UIBooking) => void;
   onNew: () => void;
   onDelete: (bookingId: string) => void;
 }
 
 const BookingList: React.FC<BookingListProps> = ({ bookings, onEdit, onNew, onDelete }) => {
   const { user } = useAuth();
+  const [pirogues, setPirogues] = useState<string[]>([]);
   const [filter, setFilter] = useState<'all' | 'today' | 'upcoming' | 'past'>('all');
   const [priorityFilter, setPriorityFilter] = useState<'all' | 'Haute' | 'Moyenne' | 'Basse'>('all');
   const [selectedPirogue, setSelectedPirogue] = useState<string>('all');
+  const [statusFilter] = useState<string>('all');
+  const [pirogueFilter] = useState<string>('all');
+  const [pilotFilter] = useState<string>('all');
+
+  useEffect(() => {
+    const loadPirogues = async () => {
+      try {
+        const piroguesData = await configServiceInstance.getPirogues();
+        setPirogues(piroguesData);
+      } catch (error) {
+        console.error('Erreur lors du chargement des pirogues:', error);
+      }
+    };
+
+    loadPirogues();
+  }, []);
 
   const getPriorityColor = (priority: string) => {
     switch (priority) {
@@ -42,7 +60,11 @@ const BookingList: React.FC<BookingListProps> = ({ bookings, onEdit, onNew, onDe
     }
   };
 
-  const getDateStatus = (date: Date) => {
+  const getDateStatus = (date: Date | undefined) => {
+    if (!date) {
+      return { status: 'unknown', label: 'Date inconnue', color: 'text-gray-400' };
+    }
+    
     const today = new Date();
     const bookingDate = new Date(date);
     
@@ -89,31 +111,26 @@ const BookingList: React.FC<BookingListProps> = ({ bookings, onEdit, onNew, onDe
     return priorityOrder[b.priority] - priorityOrder[a.priority];
   });
 
-  const exportToPDF = () => {
-    alert('Export PDF - Fonctionnalité à implémenter avec une librairie PDF');
-  };
 
-  const exportToExcel = () => {
-    alert('Export Excel - Fonctionnalité à implémenter avec une librairie Excel');
-  };
 
   const handleImport = () => {
     alert('Import de booking externe - Fonctionnalité à implémenter');
   };
 
   const handleDelete = (booking: Booking) => {
-    if (window.confirm(`Êtes-vous sûr de vouloir supprimer le booking du ${booking.scheduledDate.toLocaleDateString('fr-FR')} ?`)) {
-      onDelete(booking.id);
+    const dateText = booking.scheduledDate ? new Date(booking.scheduledDate).toLocaleDateString('fr-FR') : 'date inconnue';
+    if (window.confirm(`Êtes-vous sûr de vouloir supprimer le booking du ${dateText} ?`)) {
+      onDelete(booking.id.toString());
     }
   };
 
-  if (user?.role !== 'responsable_logistique' && user?.role !== 'directeur') {
+  if (user?.role !== 'logisticien' && user?.role !== 'directeur' && user?.role !== 'admin' && user?.role !== 'director') {
     return (
       <div className="text-center py-8">
         <Calendar className="mx-auto h-12 w-12 text-gray-400 mb-4" />
         <h3 className="text-lg font-medium text-gray-900 mb-2">Accès restreint</h3>
         <p className="text-gray-500">
-          Seuls les responsables logistiques peuvent gérer les bookings.
+          Seuls les responsables logistiques et les directeurs peuvent gérer les bookings.
         </p>
       </div>
     );
@@ -153,13 +170,13 @@ const BookingList: React.FC<BookingListProps> = ({ bookings, onEdit, onNew, onDe
             </label>
             <select
               value={filter}
-              onChange={(e) => setFilter(e.target.value as any)}
+              onChange={(e) => setFilter(e.target.value as 'all' | 'today' | 'upcoming' | 'past')}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
             >
-              <option value="all">Tous</option>
-              <option value="today">Aujourd'hui</option>
-              <option value="upcoming">À venir</option>
-              <option value="past">Passés</option>
+              <option key="all" value="all">Tous</option>
+              <option key="today" value="today">Aujourd'hui</option>
+              <option key="upcoming" value="upcoming">À venir</option>
+              <option key="past" value="past">Passés</option>
             </select>
           </div>
 
@@ -169,13 +186,13 @@ const BookingList: React.FC<BookingListProps> = ({ bookings, onEdit, onNew, onDe
             </label>
             <select
               value={priorityFilter}
-              onChange={(e) => setPriorityFilter(e.target.value as any)}
+              onChange={(e) => setPriorityFilter(e.target.value as PriorityFilter)}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
             >
-              <option value="all">Toutes</option>
-              <option value="Haute">Haute</option>
-              <option value="Moyenne">Moyenne</option>
-              <option value="Basse">Basse</option>
+              <option key="all-priority" value="all">Toutes</option>
+              <option key="Haute" value="Haute">Haute</option>
+              <option key="Moyenne" value="Moyenne">Moyenne</option>
+              <option key="Basse" value="Basse">Basse</option>
             </select>
           </div>
 
@@ -188,28 +205,25 @@ const BookingList: React.FC<BookingListProps> = ({ bookings, onEdit, onNew, onDe
               onChange={(e) => setSelectedPirogue(e.target.value)}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
             >
-              <option value="all">Toutes</option>
-              {PIROGUES.map(pirogue => (
+              <option key="all-pirogues" value="all">Toutes</option>
+              {pirogues.map(pirogue => (
                 <option key={pirogue} value={pirogue}>{pirogue}</option>
               ))}
             </select>
           </div>
 
           <div className="flex items-end space-x-2">
-            <button
-              onClick={exportToPDF}
-              className="flex items-center justify-center space-x-1 px-3 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm"
+            <ExportButton 
+              type="bookings" 
+              filters={{
+                status: statusFilter !== 'all' ? statusFilter : undefined,
+                pirogue: pirogueFilter !== 'all' ? pirogueFilter : undefined,
+                pilot: pilotFilter !== 'all' ? pilotFilter : undefined
+              }}
+              className="text-sm"
             >
-              <Download className="h-4 w-4" />
-              <span>PDF</span>
-            </button>
-            <button
-              onClick={exportToExcel}
-              className="flex items-center justify-center space-x-1 px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm"
-            >
-              <Download className="h-4 w-4" />
-              <span>Excel</span>
-            </button>
+              Exporter
+            </ExportButton>
           </div>
         </div>
       </div>
@@ -246,7 +260,7 @@ const BookingList: React.FC<BookingListProps> = ({ bookings, onEdit, onNew, onDe
                           </span>
                         </div>
                         <p className={`text-sm ${dateStatus.color}`}>
-                          {booking.scheduledDate.toLocaleDateString('fr-FR')} - {dateStatus.label}
+                          {booking.scheduledDate ? new Date(booking.scheduledDate).toLocaleDateString('fr-FR') : 'Date inconnue'} - {dateStatus.label}
                         </p>
                         <p className="text-sm text-gray-600">
                           {booking.departurePoint} → {booking.arrivalPoint}
@@ -331,7 +345,7 @@ const BookingList: React.FC<BookingListProps> = ({ bookings, onEdit, onNew, onDe
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div>
                           <div className="text-sm font-medium text-gray-900">
-                            {booking.scheduledDate.toLocaleDateString('fr-FR')}
+                            {booking.scheduledDate ? new Date(booking.scheduledDate).toLocaleDateString('fr-FR') : 'Date inconnue'}
                           </div>
                           <div className={`text-xs ${dateStatus.color}`}>
                             {dateStatus.label}

@@ -1,177 +1,229 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { User, UserRole } from '../types';
+import { User } from '../types';
+import { authService, userService } from '../services/api';
+import { useToast } from './ToastContext';
+import { handleApiError } from '../utils/errorHandler';
 
 interface AuthContextType {
   user: User | null;
-  login: (fullName: string, password: string) => Promise<boolean>;
+  login: (email: string, password: string) => Promise<boolean>;
+  register: (fullName: string, password: string, role: string) => Promise<boolean>;
   logout: () => void;
-  register: (fullName: string, password: string, role: UserRole) => Promise<boolean>;
-  updateUser: (userData: Partial<User>) => void;
-  getAllUsers: () => User[];
-  updateUserStatus: (userId: string, isActive: boolean) => void;
-  updateUserHRData: (userId: string, hrData: Partial<User['hrData']>) => void;
+  isLoading: boolean;
+  approveUser: (userId: string) => Promise<boolean>;
+  rejectUser: (userId: string) => Promise<boolean>;
+  updateUserStatus: (userId: string, status: string) => Promise<boolean>;
+  updateUser: (userData: Partial<User>) => Promise<boolean>;
 }
 
-const AuthContext = createContext<AuthContextType | null>(null);
+const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const useAuth = () => {
   const context = useContext(AuthContext);
-  if (!context) {
+  if (context === undefined) {
     throw new Error('useAuth must be used within an AuthProvider');
   }
   return context;
 };
 
-// Helper function to convert date strings back to Date objects
-const convertDatesToObjects = (user: any): User => {
-  const convertedUser = { ...user };
-  
-  // Convert createdAt
-  if (convertedUser.createdAt && typeof convertedUser.createdAt === 'string') {
-    convertedUser.createdAt = new Date(convertedUser.createdAt);
-  }
-  
-  // Convert dates in hrData
-  if (convertedUser.hrData) {
-    const dateFields = [
-      'contractStart', 'contractEnd', 'medicalVisitStart', 'medicalVisitEnd',
-      'derogationStart', 'derogationEnd', 'inductionStart', 'inductionEnd'
-    ];
-    
-    dateFields.forEach(field => {
-      if (convertedUser.hrData[field] && typeof convertedUser.hrData[field] === 'string') {
-        convertedUser.hrData[field] = new Date(convertedUser.hrData[field]);
-      }
-    });
-  }
-  
-  return convertedUser;
-};
+interface AuthProviderProps {
+  children: ReactNode;
+}
 
-export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
-  const [users, setUsers] = useState<User[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const { showError, showSuccess } = useToast();
 
   useEffect(() => {
-    // Load users from localStorage
-    const savedUsers = localStorage.getItem('clocation_users');
-    if (savedUsers) {
-      const parsedUsers = JSON.parse(savedUsers);
-      const convertedUsers = parsedUsers.map(convertDatesToObjects);
-      setUsers(convertedUsers);
-    } else {
-      // Initialize with default admin user
-      const defaultUsers: User[] = [
-        {
-          id: '1',
-          fullName: 'Admin CLOCATION',
-          email: 'admin@clocation.com',
-          role: 'directeur',
-          isActive: true,
-          createdAt: new Date(),
-          hrData: {}
+    // Check if user is logged in on app start
+    const checkAuth = async () => {
+      const token = localStorage.getItem('token');
+      if (token) {
+        try {
+          const response = await authService.getCurrentUser();
+          // Le backend retourne directement l'utilisateur
+          setUser(response);
+        } catch (error) {
+          console.error('Auth check failed:', error);
+          localStorage.removeItem('token');
+          localStorage.removeItem('user');
+          // Ne pas afficher d'erreur au démarrage si le token est invalide
         }
-      ];
-      setUsers(defaultUsers);
-      localStorage.setItem('clocation_users', JSON.stringify(defaultUsers));
-    }
-
-    // Check for saved session
-    const savedUser = localStorage.getItem('clocation_current_user');
-    if (savedUser) {
-      const parsedUser = JSON.parse(savedUser);
-      const convertedUser = convertDatesToObjects(parsedUser);
-      setUser(convertedUser);
-    }
-  }, []);
-
-  const login = async (fullName: string, password: string): Promise<boolean> => {
-    // Simple authentication - in production, this would be server-side
-    const foundUser = users.find(u => 
-      u.fullName.toLowerCase() === fullName.toLowerCase() && 
-      u.isActive
-    );
-    
-    if (foundUser && password === 'password123') { // Simple password for demo
-      setUser(foundUser);
-      localStorage.setItem('clocation_current_user', JSON.stringify(foundUser));
-      return true;
-    }
-    return false;
-  };
-
-  const logout = () => {
-    setUser(null);
-    localStorage.removeItem('clocation_current_user');
-  };
-
-  const register = async (fullName: string, password: string, role: UserRole): Promise<boolean> => {
-    // Check if user already exists
-    const existingUser = users.find(u => u.fullName.toLowerCase() === fullName.toLowerCase());
-    if (existingUser) {
-      return false;
-    }
-
-    const newUser: User = {
-      id: Date.now().toString(),
-      fullName,
-      role,
-      isActive: false, // Requires HR approval
-      createdAt: new Date(),
-      hrData: {}
+      }
+      setIsLoading(false);
     };
 
-    const updatedUsers = [...users, newUser];
-    setUsers(updatedUsers);
-    localStorage.setItem('clocation_users', JSON.stringify(updatedUsers));
-    
-    // Notify HR (in production, this would be an actual notification)
-    console.log('HR notification: New user registration pending approval');
-    
-    return true;
+    checkAuth();
+  }, []);
+
+  const login = async (email: string, password: string): Promise<boolean> => {
+    try {
+      const response = await authService.login(email, password);
+      
+      // Le backend retourne { success: true, data: { user, token } }
+      if (response.success && response.data && response.data.token && response.data.user) {
+        localStorage.setItem('token', response.data.token);
+        localStorage.setItem('user', JSON.stringify(response.data.user));
+        setUser(response.data.user);
+        showSuccess('Connexion réussie', `Bienvenue ${response.data.user.name}!`);
+        return true;
+      }
+      return false;
+    } catch (error) {
+      console.error('Login error:', error);
+      const apiError = handleApiError(error);
+      showError('Erreur de connexion', apiError.message);
+      return false;
+    }
   };
 
-  const updateUser = (userData: Partial<User>) => {
-    if (!user) return;
-    
-    const updatedUser = { ...user, ...userData };
-    setUser(updatedUser);
-    localStorage.setItem('clocation_current_user', JSON.stringify(updatedUser));
-    
-    const updatedUsers = users.map(u => u.id === user.id ? updatedUser : u);
-    setUsers(updatedUsers);
-    localStorage.setItem('clocation_users', JSON.stringify(updatedUsers));
+  const logout = async () => {
+    try {
+      // Nettoyer d'abord les données locales
+      setUser(null);
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      
+      // Ensuite appeler l'API pour invalider le token côté serveur
+      await authService.logout();
+      showSuccess('Déconnexion réussie', 'À bientôt !');
+    } catch (error) {
+      console.error('Logout error:', error);
+      // Même en cas d'erreur API, on considère la déconnexion comme réussie
+      // car les données locales ont été nettoyées
+      showSuccess('Déconnexion réussie', 'À bientôt !');
+    }
   };
 
-  const getAllUsers = () => users;
-
-  const updateUserStatus = (userId: string, isActive: boolean) => {
-    const updatedUsers = users.map(u => 
-      u.id === userId ? { ...u, isActive } : u
-    );
-    setUsers(updatedUsers);
-    localStorage.setItem('clocation_users', JSON.stringify(updatedUsers));
+  const register = async (fullName: string, password: string, role: string): Promise<boolean> => {
+    try {
+      // Séparer le nom complet en prénom et nom
+      const nameParts = fullName.trim().split(' ');
+      const firstName = nameParts[0] || '';
+      const lastName = nameParts.slice(1).join(' ') || '';
+      
+      // Fonction pour normaliser le texte (supprimer accents et caractères spéciaux)
+      const normalizeText = (text: string): string => {
+        return text
+          .toLowerCase()
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '') // Supprimer les accents
+          .replace(/[^a-z0-9\s]/g, '') // Supprimer les caractères spéciaux sauf espaces
+          .replace(/\s+/g, '.') // Remplacer espaces par points
+          .replace(/\.+/g, '.') // Éviter les points multiples
+          .replace(/^\.|\.$/, ''); // Supprimer points en début/fin
+      };
+      
+      // Générer un email basé sur le nom normalisé
+      const email = `${normalizeText(fullName)}@clocation.com`;
+      
+      const response = await authService.register({
+        name: fullName,
+        firstName,
+        lastName,
+        email,
+        password,
+        password_confirmation: password,
+        role
+      });
+      
+      if (response.success) {
+        showSuccess('Inscription réussie', 'Votre demande d\'inscription a été envoyée pour validation par les Ressources Humaines.');
+        return true;
+      }
+      return false;
+    } catch (error) {
+      console.error('Register error:', error);
+      const apiError = handleApiError(error);
+      showError('Erreur d\'inscription', apiError.message);
+      return false;
+    }
   };
 
-  const updateUserHRData = (userId: string, hrData: Partial<User['hrData']>) => {
-    const updatedUsers = users.map(u => 
-      u.id === userId ? { ...u, hrData: { ...u.hrData, ...hrData } } : u
-    );
-    setUsers(updatedUsers);
-    localStorage.setItem('clocation_users', JSON.stringify(updatedUsers));
+  const approveUser = async (userId: string): Promise<boolean> => {
+    try {
+      const response = await authService.updateUserStatus(userId, 'approved');
+      if (response.success) {
+        showSuccess('Utilisateur approuvé', 'L\'utilisateur a été approuvé avec succès.');
+        return true;
+      }
+      return false;
+    } catch (error) {
+      console.error('Approve user error:', error);
+      const apiError = handleApiError(error);
+      showError('Erreur d\'approbation', apiError.message);
+      return false;
+    }
+  };
+
+  const rejectUser = async (userId: string): Promise<boolean> => {
+    try {
+      const response = await authService.updateUserStatus(userId, 'rejected');
+      if (response.success) {
+        showSuccess('Utilisateur rejeté', 'L\'utilisateur a été rejeté.');
+        return true;
+      }
+      return false;
+    } catch (error) {
+      console.error('Reject user error:', error);
+      const apiError = handleApiError(error);
+      showError('Erreur de rejet', apiError.message);
+      return false;
+    }
+  };
+
+  const updateUserStatus = async (userId: string, status: string): Promise<boolean> => {
+    try {
+      const response = await authService.updateUserStatus(userId, status);
+      if (response.success) {
+        showSuccess('Statut mis à jour', 'Le statut de l\'utilisateur a été mis à jour.');
+        return true;
+      }
+      return false;
+    } catch (error) {
+      console.error('Update user status error:', error);
+      const apiError = handleApiError(error);
+      showError('Erreur de mise à jour', apiError.message);
+      return false;
+    }
+  };
+
+  const updateUser = async (userData: Partial<User>): Promise<boolean> => {
+    try {
+      if (!user) return false;
+      
+      const updatedUser = await authService.updateProfile(userData);
+      if (updatedUser) {
+        const newUser = { ...user, ...updatedUser };
+        setUser(newUser);
+        localStorage.setItem('user', JSON.stringify(newUser));
+        showSuccess('Profil mis à jour', 'Vos informations ont été mises à jour avec succès.');
+        return true;
+      }
+      return false;
+    } catch (error) {
+      console.error('Update user error:', error);
+      const apiError = handleApiError(error);
+      showError('Erreur de mise à jour du profil', apiError.message);
+      return false;
+    }
+  };
+
+  const value = {
+    user,
+    login,
+    register,
+    logout,
+    isLoading,
+    approveUser,
+    rejectUser,
+    updateUserStatus,
+    updateUser
   };
 
   return (
-    <AuthContext.Provider value={{
-      user,
-      login,
-      logout,
-      register,
-      updateUser,
-      getAllUsers,
-      updateUserStatus,
-      updateUserHRData
-    }}>
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   );

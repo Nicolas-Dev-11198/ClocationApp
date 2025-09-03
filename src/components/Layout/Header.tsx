@@ -1,5 +1,5 @@
 import React from 'react';
-import { LogOut, User, Anchor, Menu } from 'lucide-react';
+import { LogOut, User, Anchor } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { ROLE_LABELS } from '../../types';
 
@@ -23,7 +23,7 @@ const Header: React.FC = () => {
               <div className="hidden sm:flex items-center space-x-2">
                 <User className="h-4 w-4 sm:h-5 sm:w-5 text-blue-200" />
                 <div className="text-right">
-                  <p className="font-medium text-sm sm:text-base">{user.fullName}</p>
+                  <p className="font-medium text-sm sm:text-base">{user.name || user.fullName || 'Utilisateur'}</p>
                   <p className="text-xs sm:text-sm text-blue-200">{ROLE_LABELS[user.role]}</p>
                 </div>
               </div>
@@ -31,7 +31,7 @@ const Header: React.FC = () => {
               {/* Mobile user info */}
               <div className="sm:hidden flex items-center space-x-2">
                 <User className="h-4 w-4 text-blue-200" />
-                <span className="text-sm font-medium">{user.fullName.split(' ')[0]}</span>
+                <span className="text-sm font-medium">{(user.name || user.fullName || 'Utilisateur').split(' ')[0]}</span>
               </div>
               
               <button

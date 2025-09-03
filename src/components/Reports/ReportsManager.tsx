@@ -1,11 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  FileText, 
-  Download, 
-  Calendar, 
-  Filter, 
   BarChart3, 
-  TrendingUp,
   Ship,
   Users,
   Wrench,
@@ -15,9 +10,23 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { Logbook, MaintenanceSheet } from '../../types';
+import { Logbook as ApiLogbook, Maintenance } from '../../types/api';
+import { logbookService, maintenanceService } from '../../services/api';
+import { useToast } from '../../contexts/ToastContext';
+import { usePermissions } from '../../hooks/usePermissions';
+import { AccessDenied } from '../Common/PermissionGuard';
+import ExportButton from '../ExportButton';
+
+type ReportType = 'overview' | 'logbooks' | 'maintenance' | 'users';
 
 const ReportsManager: React.FC = () => {
   const { user } = useAuth();
+  const permissions = usePermissions();
+
+  // Check if user has permission to view reports
+  if (!permissions.canViewReports) {
+    return <AccessDenied />;
+  }
   const [dateRange, setDateRange] = useState({
     start: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
     end: new Date().toISOString().split('T')[0]
@@ -25,29 +34,59 @@ const ReportsManager: React.FC = () => {
   const [reportType, setReportType] = useState<'overview' | 'logbooks' | 'maintenance' | 'hr'>('overview');
   const [logbooks, setLogbooks] = useState<Logbook[]>([]);
   const [maintenanceSheets, setMaintenanceSheets] = useState<MaintenanceSheet[]>([]);
+  const [loading, setLoading] = useState(true);
+  const { showToast } = useToast();
 
   useEffect(() => {
-    // Load data from localStorage
-    const savedLogbooks = localStorage.getItem('clocation_logbooks');
-    if (savedLogbooks) {
-      const parsed = JSON.parse(savedLogbooks);
-      setLogbooks(parsed.map((lb: any) => ({
-        ...lb,
-        date: new Date(lb.date),
-        createdAt: new Date(lb.createdAt)
-      })));
-    }
-
-    const savedSheets = localStorage.getItem('clocation_maintenance_sheets');
-    if (savedSheets) {
-      const parsed = JSON.parse(savedSheets);
-      setMaintenanceSheets(parsed.map((sheet: any) => ({
-        ...sheet,
-        interventionDate: new Date(sheet.interventionDate),
-        createdAt: new Date(sheet.createdAt)
-      })));
-    }
+    loadReportsData();
   }, []);
+
+  const loadReportsData = async () => {
+    try {
+      setLoading(true);
+      
+      // Load logbooks only if user has permission
+      if (permissions.canManageLogbook) {
+        try {
+          const logbooksResponse = await logbookService.getLogbooks();
+          const logbooksData = logbooksResponse.data || logbooksResponse;
+          setLogbooks(logbooksData.map((lb: ApiLogbook) => ({
+            ...lb,
+            date: new Date(lb.date),
+            createdAt: new Date(lb.created_at || lb.createdAt)
+          })));
+        } catch (error) {
+          console.error('Failed to load logbooks:', error);
+          setLogbooks([]);
+        }
+      } else {
+        setLogbooks([]);
+      }
+      
+      // Load maintenance sheets only if user has permission
+      if (permissions.canManageMaintenance) {
+        try {
+          const maintenanceResponse = await maintenanceService.getMaintenanceSheets();
+          const maintenanceData = maintenanceResponse.data || maintenanceResponse;
+          setMaintenanceSheets(maintenanceData.map((sheet: Maintenance) => ({
+            ...sheet,
+            interventionDate: new Date(sheet.interventionDate),
+            createdAt: new Date(sheet.created_at || sheet.createdAt)
+          })));
+        } catch (error) {
+          console.error('Failed to load maintenance sheets:', error);
+          setMaintenanceSheets([]);
+        }
+      } else {
+        setMaintenanceSheets([]);
+      }
+    } catch (error) {
+      console.error('Failed to load reports data:', error);
+      showToast('error', 'Erreur lors du chargement des données de rapport');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const filterDataByDateRange = <T extends { date?: Date; interventionDate?: Date; createdAt: Date }>(data: T[]) => {
     const start = new Date(dateRange.start);
@@ -96,15 +135,7 @@ const ReportsManager: React.FC = () => {
 
   const stats = getOverviewStats();
 
-  const exportToPDF = (type: string) => {
-    // In a real application, this would generate and download a PDF
-    alert(`Export PDF ${type} - Fonctionnalité à implémenter avec une librairie PDF`);
-  };
 
-  const exportToExcel = (type: string) => {
-    // In a real application, this would generate and download an Excel file
-    alert(`Export Excel ${type} - Fonctionnalité à implémenter avec une librairie Excel`);
-  };
 
   const StatCard: React.FC<{
     title: string;
@@ -127,6 +158,15 @@ const ReportsManager: React.FC = () => {
     </div>
   );
 
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center p-8">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+        <span className="ml-2 text-gray-600">Chargement des données de rapport...</span>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -146,14 +186,18 @@ const ReportsManager: React.FC = () => {
             </label>
             <select
               value={reportType}
-              onChange={(e) => setReportType(e.target.value as any)}
+              onChange={(e) => setReportType(e.target.value as ReportType)}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
             >
-              <option value="overview">Vue d'ensemble</option>
-              <option value="logbooks">Carnets de bord</option>
-              <option value="maintenance">Maintenance</option>
-              {(user?.role === 'drh' || user?.role === 'directeur') && (
-                <option value="hr">Ressources humaines</option>
+              <option key="overview" value="overview">Vue d'ensemble</option>
+              {permissions.canManageLogbook && (
+                <option key="logbooks" value="logbooks">Carnets de bord</option>
+              )}
+              {permissions.canManageMaintenance && (
+                <option key="maintenance" value="maintenance">Maintenance</option>
+              )}
+              {permissions.canManageUsers && (
+                <option key="hr" value="hr">Ressources humaines</option>
               )}
             </select>
           </div>
@@ -220,76 +264,77 @@ const ReportsManager: React.FC = () => {
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Logbooks Summary */}
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-                <BookOpen className="h-5 w-5 mr-2 text-blue-600" />
-                Carnets de bord
-              </h3>
-              <div className="space-y-3">
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-gray-600">Total créés</span>
-                  <span className="font-medium">{stats.totalLogbooks}</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-gray-600">Validés</span>
-                  <span className="font-medium text-green-600">{stats.validatedLogbooks}</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-gray-600">En attente</span>
-                  <span className="font-medium text-yellow-600">{stats.pendingLogbooks}</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-gray-600">Avec problème mécanique</span>
-                  <span className="font-medium text-red-600">{stats.mechanicalIssues}</span>
+            {permissions.canManageLogbook && (
+              <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+                  <BookOpen className="h-5 w-5 mr-2 text-blue-600" />
+                  Carnets de bord
+                </h3>
+                <div className="space-y-3">
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-gray-600">Total créés</span>
+                    <span className="font-medium">{stats.totalLogbooks}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-gray-600">Validés</span>
+                    <span className="font-medium text-green-600">{stats.validatedLogbooks}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-gray-600">En attente</span>
+                    <span className="font-medium text-yellow-600">{stats.pendingLogbooks}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-gray-600">Avec problème mécanique</span>
+                    <span className="font-medium text-red-600">{stats.mechanicalIssues}</span>
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
 
             {/* Maintenance Summary */}
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-                <Wrench className="h-5 w-5 mr-2 text-orange-600" />
-                Maintenance
-              </h3>
-              <div className="space-y-3">
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-gray-600">Total interventions</span>
-                  <span className="font-medium">{stats.totalMaintenance}</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-gray-600">Terminées</span>
-                  <span className="font-medium text-green-600">{stats.completedMaintenance}</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-gray-600">En cours</span>
-                  <span className="font-medium text-yellow-600">{stats.pendingMaintenance}</span>
+            {permissions.canManageMaintenance && (
+              <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+                  <Wrench className="h-5 w-5 mr-2 text-orange-600" />
+                  Maintenance
+                </h3>
+                <div className="space-y-3">
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-gray-600">Total interventions</span>
+                    <span className="font-medium">{stats.totalMaintenance}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-gray-600">Terminées</span>
+                    <span className="font-medium text-green-600">{stats.completedMaintenance}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-gray-600">En cours</span>
+                    <span className="font-medium text-yellow-600">{stats.pendingMaintenance}</span>
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
           </div>
         </>
       )}
 
       {/* Logbooks Report */}
-      {reportType === 'logbooks' && (
+      {reportType === 'logbooks' && permissions.canManageLogbook && (
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 space-y-4 sm:space-y-0">
             <h3 className="text-lg font-semibold text-gray-900">Rapport des carnets de bord</h3>
             <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2">
-              <button
-                onClick={() => exportToPDF('logbooks')}
-                className="flex items-center justify-center space-x-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm"
+              <ExportButton 
+                type="logbooks" 
+                filters={{
+                  startDate,
+                  endDate,
+                  status: statusFilter !== 'all' ? statusFilter : undefined
+                }}
+                className="text-sm"
               >
-                <Download className="h-4 w-4" />
-                <span>PDF</span>
-              </button>
-              <button
-                onClick={() => exportToExcel('logbooks')}
-                className="flex items-center justify-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm"
-              >
-                <Download className="h-4 w-4" />
-                <span>Excel</span>
-              </button>
+                Exporter
+              </ExportButton>
             </div>
           </div>
 
@@ -327,25 +372,22 @@ const ReportsManager: React.FC = () => {
       )}
 
       {/* Maintenance Report */}
-      {reportType === 'maintenance' && (
+      {reportType === 'maintenance' && permissions.canManageMaintenance && (
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 space-y-4 sm:space-y-0">
             <h3 className="text-lg font-semibold text-gray-900">Rapport de maintenance</h3>
             <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2">
-              <button
-                onClick={() => exportToPDF('maintenance')}
-                className="flex items-center justify-center space-x-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm"
+              <ExportButton 
+                type="maintenances" 
+                filters={{
+                  startDate,
+                  endDate,
+                  status: statusFilter !== 'all' ? statusFilter : undefined
+                }}
+                className="text-sm"
               >
-                <Download className="h-4 w-4" />
-                <span>PDF</span>
-              </button>
-              <button
-                onClick={() => exportToExcel('maintenance')}
-                className="flex items-center justify-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm"
-              >
-                <Download className="h-4 w-4" />
-                <span>Excel</span>
-              </button>
+                Exporter
+              </ExportButton>
             </div>
           </div>
 
@@ -383,25 +425,21 @@ const ReportsManager: React.FC = () => {
       )}
 
       {/* HR Report */}
-      {reportType === 'hr' && (user?.role === 'drh' || user?.role === 'directeur') && (
+      {reportType === 'hr' && permissions.canManageUsers && (
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 space-y-4 sm:space-y-0">
             <h3 className="text-lg font-semibold text-gray-900">Rapport RH</h3>
             <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2">
-              <button
-                onClick={() => exportToPDF('hr')}
-                className="flex items-center justify-center space-x-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm"
+              <ExportButton 
+                type="users" 
+                filters={{
+                  startDate,
+                  endDate
+                }}
+                className="text-sm"
               >
-                <Download className="h-4 w-4" />
-                <span>PDF</span>
-              </button>
-              <button
-                onClick={() => exportToExcel('hr')}
-                className="flex items-center justify-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm"
-              >
-                <Download className="h-4 w-4" />
-                <span>Excel</span>
-              </button>
+                Exporter
+              </ExportButton>
             </div>
           </div>
 

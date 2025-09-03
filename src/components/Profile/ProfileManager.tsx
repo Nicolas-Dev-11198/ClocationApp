@@ -7,7 +7,7 @@ const ProfileManager: React.FC = () => {
   const { user, updateUser } = useAuth();
   const [isEditing, setIsEditing] = useState(false);
   const [formData, setFormData] = useState({
-    fullName: user?.fullName || '',
+    name: user?.name || '',
     email: user?.email || '',
     phone: user?.phone || '',
     profilePhoto: user?.profilePhoto || ''
@@ -22,7 +22,7 @@ const ProfileManager: React.FC = () => {
 
   const handleCancel = () => {
     setFormData({
-      fullName: user.fullName,
+      name: user.name,
       email: user.email || '',
       phone: user.phone || '',
       profilePhoto: user.profilePhoto || ''
@@ -102,14 +102,14 @@ const ProfileManager: React.FC = () => {
           </div>
           
           <div className="flex-1">
-            <h1 className="text-xl sm:text-2xl font-bold text-gray-900">{user.fullName}</h1>
+            <h1 className="text-xl sm:text-2xl font-bold text-gray-900">{user.name || 'Utilisateur'}</h1>
             <p className="text-gray-600 mt-1">{ROLE_LABELS[user.role]}</p>
             <div className="flex items-center space-x-4 mt-2 text-sm text-gray-500">
-              <span>Membre depuis {user.createdAt.toLocaleDateString('fr-FR')}</span>
+              <span>Membre depuis {user.createdAt ? new Date(user.createdAt).toLocaleDateString('fr-FR') : user.hireDate ? new Date(user.hireDate).toLocaleDateString('fr-FR') : 'Date inconnue'}</span>
               <span className={`px-2 py-1 rounded-full text-xs ${
-                user.isActive ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                (user.isActive !== false && user.status !== 'inactive') ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
               }`}>
-                {user.isActive ? 'Actif' : 'Inactif'}
+                {(user.isActive !== false && user.status !== 'inactive') ? 'Actif' : 'Inactif'}
               </span>
             </div>
           </div>
@@ -145,12 +145,12 @@ const ProfileManager: React.FC = () => {
             {isEditing ? (
               <input
                 type="text"
-                value={formData.fullName}
-                onChange={(e) => setFormData(prev => ({ ...prev, fullName: e.target.value }))}
+                value={formData.name}
+                    onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
               />
             ) : (
-              <p className="text-gray-900">{user.fullName}</p>
+              <p className="text-gray-900">{user.name}</p>
             )}
           </div>
 

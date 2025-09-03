@@ -1,17 +1,20 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Save, Calendar, Users, MapPin, Package, AlertTriangle } from 'lucide-react';
-import { Booking, PIROGUES, LOCATIONS } from '../../types';
-import { useAuth } from '../../contexts/AuthContext';
+import { Booking } from '../../types/api';
+import { Booking as UIBooking } from '../../types';
+import { configServiceInstance } from '../../services/configService';
 
 interface BookingFormProps {
-  booking?: Booking;
-  onSave: (booking: Omit<Booking, 'id' | 'createdAt'>) => void;
+  booking?: UIBooking;
+  onSave: (booking: Omit<UIBooking, 'id' | 'createdAt'>) => void;
   onCancel: () => void;
 }
 
 const BookingForm: React.FC<BookingFormProps> = ({ booking, onSave, onCancel }) => {
-  const { user } = useAuth();
-  const [formData, setFormData] = useState<Omit<Booking, 'id' | 'createdAt'>>({
+  const [pirogues, setPirogues] = useState<string[]>([]);
+  const [locations, setLocations] = useState<string[]>([]);
+  const [priorityOptions, setPriorityOptions] = useState<Array<{value: string, label: string, color: string}>>([]);
+  const [formData, setFormData] = useState<Omit<UIBooking, 'id' | 'createdAt'>>({
     scheduledDate: booking?.scheduledDate || new Date(),
     pirogue: booking?.pirogue || '',
     pilot: booking?.pilot || '',
@@ -27,6 +30,25 @@ const BookingForm: React.FC<BookingFormProps> = ({ booking, onSave, onCancel }) 
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    const loadConfig = async () => {
+      try {
+        const [piroguesData, locationsData, priorityOptionsData] = await Promise.all([
+          configServiceInstance.getPirogues(),
+          configServiceInstance.getLocations(),
+          configServiceInstance.getPriorityOptions()
+        ]);
+        setPirogues(piroguesData);
+        setLocations(locationsData);
+        setPriorityOptions(priorityOptionsData);
+      } catch (error) {
+        console.error('Error loading config data:', error);
+      }
+    };
+
+    loadConfig();
+  }, []);
 
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
@@ -75,11 +97,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ booking, onSave, onCancel }) 
     }
   };
 
-  const priorityOptions = [
-    { value: 'Haute', label: 'Haute', color: 'text-red-600' },
-    { value: 'Moyenne', label: 'Moyenne', color: 'text-yellow-600' },
-    { value: 'Basse', label: 'Basse', color: 'text-green-600' }
-  ];
+
 
   return (
     <div className="max-w-4xl mx-auto bg-white rounded-lg shadow-sm border border-gray-200">
@@ -126,8 +144,8 @@ const BookingForm: React.FC<BookingFormProps> = ({ booking, onSave, onCancel }) 
               }`}
               required
             >
-              <option value="">Sélectionner une pirogue</option>
-              {PIROGUES.map(pirogue => (
+              <option key="select-pirogue" value="">Sélectionner une pirogue</option>
+              {pirogues.map(pirogue => (
                 <option key={pirogue} value={pirogue}>{pirogue}</option>
               ))}
             </select>
@@ -142,7 +160,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ booking, onSave, onCancel }) 
             </label>
             <select
               value={formData.priority}
-              onChange={(e) => setFormData(prev => ({ ...prev, priority: e.target.value as any }))}
+              onChange={(e) => setFormData(prev => ({ ...prev, priority: e.target.value as 'Haute' | 'Moyenne' | 'Basse' }))}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base"
             >
               {priorityOptions.map(option => (
@@ -245,8 +263,8 @@ const BookingForm: React.FC<BookingFormProps> = ({ booking, onSave, onCancel }) 
                 }`}
                 required
               >
-                <option value="">Sélectionner le point de départ</option>
-                {LOCATIONS.map(location => (
+                <option key="select-departure" value="">Sélectionner le point de départ</option>
+                {locations.map(location => (
                   <option key={location} value={location}>{location}</option>
                 ))}
               </select>
@@ -267,8 +285,8 @@ const BookingForm: React.FC<BookingFormProps> = ({ booking, onSave, onCancel }) 
                 }`}
                 required
               >
-                <option value="">Sélectionner le point d'arrivée</option>
-                {LOCATIONS.map(location => (
+                <option key="select-arrival" value="">Sélectionner le point d'arrivée</option>
+                {locations.map(location => (
                   <option key={location} value={location}>{location}</option>
                 ))}
               </select>

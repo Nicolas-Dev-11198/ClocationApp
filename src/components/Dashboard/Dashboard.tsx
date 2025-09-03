@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   BookOpen, 
   Wrench, 
@@ -10,75 +10,183 @@ import {
   Clock
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
+import DataTable from '../Common/DataTable';
+import { bookingServiceInstance } from '../../services/bookingService';
+import { logbookServiceInstance } from '../../services/logbookService';
+import { maintenanceServiceInstance } from '../../services/maintenanceService';
+import { userServiceInstance } from '../../services/userService';
+
+interface Activity {
+  id: string;
+  type: 'logbook' | 'maintenance' | 'booking';
+  title: string;
+  description: string;
+  time: string;
+  icon: React.ComponentType<any>;
+}
 
 const Dashboard: React.FC = () => {
   const { user } = useAuth();
-
-  const stats = [
+  const [selectedCard, setSelectedCard] = useState<string | null>(null);
+  const [tableData, setTableData] = useState<any[]>([]);
+  const [tableColumns, setTableColumns] = useState<any[]>([]);
+  const [tableTitle, setTableTitle] = useState<string>('');
+  const [loading, setLoading] = useState(false);
+  const [stats, setStats] = useState([
     {
       title: 'Pirogues actives',
-      value: '8',
+      value: '0',
       icon: Ship,
       color: 'blue',
-      trend: '+2%'
+      trend: '+0%'
     },
     {
       title: 'Trajets du jour',
-      value: '12',
+      value: '0',
       icon: Calendar,
       color: 'green',
-      trend: '+15%'
+      trend: '+0%'
     },
     {
       title: 'Carnets en attente',
-      value: '3',
+      value: '0',
       icon: BookOpen,
       color: 'yellow',
-      trend: '-5%'
+      trend: '+0%'
     },
     {
       title: 'Alertes maintenance',
-      value: '2',
+      value: '0',
       icon: AlertTriangle,
       color: 'red',
-      trend: '0%'
+      trend: '+0%'
     }
-  ];
+  ]);
+  const [recentActivities, setRecentActivities] = useState<any[]>([]);
 
-  const recentActivities = [
-    {
-      id: 1,
-      type: 'logbook',
-      title: 'Carnet de bord validé',
-      description: 'Pirogue C1 - Pilote Jean Dupont',
-      time: 'Il y a 2 heures',
-      icon: BookOpen
-    },
-    {
-      id: 2,
-      type: 'maintenance',
-      title: 'Maintenance programmée',
-      description: 'Pirogue C3 - Révision moteur',
-      time: 'Il y a 4 heures',
-      icon: Wrench
-    },
-    {
-      id: 3,
-      type: 'booking',
-      title: 'Nouveau booking',
-      description: 'Transport PAX vers Ombouée',
-      time: 'Il y a 6 heures',
-      icon: Calendar
-    },
-    {
-      id: 4,
-      type: 'user',
-      title: 'Nouvel utilisateur',
-      description: 'Inscription pilote en attente',
-      time: 'Il y a 8 heures',
-      icon: Users
-    }
-  ];
+  // Charger les statistiques depuis l'API
+  useEffect(() => {
+    const loadDashboardData = async () => {
+      try {
+        // Charger les utilisateurs pilotes (pirogues actives)
+        const users = await userServiceInstance.getAllUsers();
+        const activePilots = Array.isArray(users) ? users.filter(user => user.role === 'pilote' && user.isActive) : [];
+        
+        // Charger les réservations du jour
+        const bookings = await bookingServiceInstance.getAll();
+        const todayBookings = Array.isArray(bookings) ? bookings.filter(booking => {
+          const bookingDate = new Date(booking.scheduledDate);
+          const today = new Date();
+          return bookingDate.toDateString() === today.toDateString();
+        }) : [];
+        
+        // Charger les carnets en attente
+        const logbooks = await logbookServiceInstance.getAll();
+        const pendingLogbooks = Array.isArray(logbooks) ? logbooks.filter(logbook => logbook.status === 'pending') : [];
+        
+        // Charger les alertes de maintenance
+        const maintenances = await maintenanceServiceInstance.getAll();
+        const alertMaintenances = Array.isArray(maintenances) ? maintenances.filter(maintenance => 
+          !maintenance.mechanicValidated || !maintenance.pilotValidated || !maintenance.hseValidated
+        ) : [];
+        
+        // Mettre à jour les statistiques
+        setStats([
+          {
+            title: 'Pirogues actives',
+            value: activePilots.length.toString(),
+            icon: Ship,
+            color: 'blue',
+            trend: '+0%'
+          },
+          {
+            title: 'Trajets du jour',
+            value: todayBookings.length.toString(),
+            icon: Calendar,
+            color: 'green',
+            trend: '+0%'
+          },
+          {
+            title: 'Carnets en attente',
+            value: pendingLogbooks.length.toString(),
+            icon: BookOpen,
+            color: 'yellow',
+            trend: '+0%'
+          },
+          {
+            title: 'Alertes maintenance',
+            value: alertMaintenances.length.toString(),
+            icon: AlertTriangle,
+            color: 'red',
+            trend: '+0%'
+          }
+        ]);
+        
+        // Créer les activités récentes à partir des données réelles
+        const activities: Activity[] = [];
+        
+        // Ajouter les derniers carnets validés
+        const recentLogbooks = Array.isArray(logbooks) ? logbooks
+          .filter(logbook => logbook.status === 'validated')
+          .sort((a, b) => new Date(b.updatedAt || b.createdAt).getTime() - new Date(a.updatedAt || a.createdAt).getTime())
+          .slice(0, 2) : [];
+        
+        recentLogbooks.forEach(logbook => {
+          activities.push({
+            id: `logbook-${logbook.id}`,
+            type: 'logbook',
+            title: 'Carnet de bord validé',
+            description: `Pirogue ${logbook.pirogue} - Pilote ${logbook.pilot}`,
+            time: new Date(logbook.updatedAt || logbook.createdAt).toLocaleString('fr-FR'),
+            icon: BookOpen
+          });
+        });
+        
+        // Ajouter les dernières maintenances
+        const recentMaintenances = Array.isArray(maintenances) ? maintenances
+          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+          .slice(0, 2) : [];
+        
+        recentMaintenances.forEach(maintenance => {
+          activities.push({
+            id: `maintenance-${maintenance.id}`,
+            type: 'maintenance',
+            title: 'Maintenance programmée',
+            description: `Pirogue ${maintenance.pirogue} - ${maintenance.workDescription}`,
+            time: new Date(maintenance.createdAt).toLocaleString('fr-FR'),
+            icon: Wrench
+          });
+        });
+        
+        // Ajouter les dernières réservations
+        const recentBookings = Array.isArray(bookings) ? bookings
+          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+          .slice(0, 2) : [];
+        
+        recentBookings.forEach(booking => {
+          activities.push({
+            id: `booking-${booking.id}`,
+            type: 'booking',
+            title: 'Nouvelle réservation',
+            description: `${booking.departurePoint} vers ${booking.arrivalPoint}`,
+            time: new Date(booking.createdAt).toLocaleString('fr-FR'),
+            icon: Calendar
+          });
+        });
+        
+        // Trier par date et prendre les 4 plus récentes
+        activities.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
+        setRecentActivities(activities.slice(0, 4));
+        
+      } catch (error) {
+        console.error('Erreur lors du chargement des données du dashboard:', error);
+      }
+    };
+    
+    loadDashboardData();
+  }, []);
+
+
 
   const getColorClasses = (color: string) => {
     const colors = {
@@ -90,6 +198,122 @@ const Dashboard: React.FC = () => {
     return colors[color as keyof typeof colors] || colors.blue;
   };
 
+  const handleCardClick = async (cardType: string) => {
+    setLoading(true);
+    setSelectedCard(cardType);
+    
+    try {
+      console.log('Clicking card:', cardType);
+      switch (cardType) {
+        case 'pirogues':
+          console.log('Fetching users...');
+          const users = await userServiceInstance.getAllUsers();
+          console.log('Users received:', users);
+          console.log('Users type:', typeof users, 'Array?', Array.isArray(users));
+          const pirogues = Array.isArray(users) ? users.filter(user => user.role === 'pilote') : [];
+          console.log('Filtered pirogues:', pirogues);
+          setTableData(pirogues);
+          setTableColumns([
+            { key: 'name', label: 'Nom' },
+            { key: 'email', label: 'Email' },
+            { key: 'phone', label: 'Téléphone' },
+            { key: 'status', label: 'Statut', render: (value: string) => (
+              <span className={`px-2 py-1 rounded-full text-xs ${
+                value === 'active' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+              }`}>
+                {value === 'active' ? 'Actif' : 'Inactif'}
+              </span>
+            )}
+          ]);
+          setTableTitle('Pirogues actives');
+          break;
+          
+        case 'trajets':
+          console.log('Fetching bookings...');
+          const bookings = await bookingServiceInstance.getAll();
+          console.log('Bookings received:', bookings);
+          console.log('Bookings type:', typeof bookings, 'Array?', Array.isArray(bookings));
+          const todayBookings = Array.isArray(bookings) ? bookings.filter(booking => {
+            const bookingDate = new Date(booking.scheduledDate);
+            const today = new Date();
+            return bookingDate.toDateString() === today.toDateString();
+          }) : [];
+          setTableData(todayBookings);
+          setTableColumns([
+            { key: 'pirogue', label: 'Pirogue' },
+            { key: 'departurePoint', label: 'Départ' },
+            { key: 'arrivalPoint', label: 'Destination' },
+            { key: 'scheduledDate', label: 'Date', render: (value: string) => new Date(value).toLocaleDateString('fr-FR') },
+            { key: 'passengerCount', label: 'Passagers' },
+            { key: 'status', label: 'Statut', render: (value: string) => (
+              <span className={`px-2 py-1 rounded-full text-xs ${
+                value === 'confirmed' ? 'bg-green-100 text-green-800' : 
+                value === 'pending' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'
+              }`}>
+                {value === 'confirmed' ? 'Confirmé' : value === 'pending' ? 'En attente' : 'Annulé'}
+              </span>
+            )}
+          ]);
+          setTableTitle('Trajets du jour');
+          break;
+          
+        case 'carnets':
+          console.log('Fetching logbooks...');
+          const logbooks = await logbookServiceInstance.getAll();
+          console.log('Logbooks received:', logbooks);
+          console.log('Logbooks type:', typeof logbooks, 'Array?', Array.isArray(logbooks));
+          const pendingLogbooks = Array.isArray(logbooks) ? logbooks.filter(logbook => logbook.status === 'pending') : [];
+          setTableData(pendingLogbooks);
+          setTableColumns([
+            { key: 'pirogue', label: 'Pirogue' },
+            { key: 'pilot', label: 'Pilote' },
+            { key: 'date', label: 'Date', render: (value: string) => new Date(value).toLocaleDateString('fr-FR') },
+            { key: 'trips', label: 'Trajets', render: (value: unknown) => Array.isArray(value) ? value.length : 0 },
+            { key: 'status', label: 'Statut', render: (value: string) => (
+              <span className="px-2 py-1 rounded-full text-xs bg-yellow-100 text-yellow-800">
+                En attente
+              </span>
+            )}
+          ]);
+          setTableTitle('Carnets en attente');
+          break;
+          
+        case 'maintenance':
+          console.log('Fetching maintenances...');
+          const maintenances = await maintenanceServiceInstance.getAll();
+          console.log('Maintenances received:', maintenances);
+          const alertMaintenances = maintenances.filter(maintenance => 
+            !maintenance.mechanicValidated || !maintenance.pilotValidated || !maintenance.hseValidated
+          );
+          setTableData(alertMaintenances);
+          setTableColumns([
+            { key: 'pirogue', label: 'Pirogue' },
+            { key: 'interventionType', label: 'Type' },
+            { key: 'workDescription', label: 'Description' },
+            { key: 'interventionDate', label: 'Date', render: (value: string) => new Date(value).toLocaleDateString('fr-FR') },
+            { key: 'responsiblePilot', label: 'Pilote responsable' }
+          ]);
+          setTableTitle('Alertes maintenance');
+          break;
+          
+        default:
+          break;
+      }
+    } catch (error) {
+      console.error('Error fetching data for', cardType, ':', error);
+      setTableData([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const closeTable = () => {
+    setSelectedCard(null);
+    setTableData([]);
+    setTableColumns([]);
+    setTableTitle('');
+  };
+
   return (
     <div className="space-y-4 sm:space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between space-y-2 sm:space-y-0">
@@ -98,7 +322,7 @@ const Dashboard: React.FC = () => {
             Tableau de bord
           </h1>
           <p className="text-gray-600 mt-1 text-sm sm:text-base">
-            Bienvenue, {user?.fullName}
+            Bienvenue, {user?.name || user?.fullName || 'Utilisateur'}
           </p>
         </div>
         <div className="flex items-center space-x-2 text-xs sm:text-sm text-gray-500">
@@ -111,8 +335,17 @@ const Dashboard: React.FC = () => {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6">
         {stats.map((stat, index) => {
           const Icon = stat.icon;
+          const cardType = stat.title === 'Pirogues actives' ? 'pirogues' :
+                          stat.title === 'Trajets du jour' ? 'trajets' :
+                          stat.title === 'Carnets en attente' ? 'carnets' :
+                          stat.title === 'Alertes maintenance' ? 'maintenance' : '';
+          
           return (
-            <div key={index} className="bg-white rounded-lg shadow-sm border border-gray-200 p-3 sm:p-6">
+            <div 
+              key={index} 
+              className="bg-white rounded-lg shadow-sm border border-gray-200 p-3 sm:p-6 cursor-pointer hover:shadow-md transition-shadow"
+              onClick={() => handleCardClick(cardType)}
+            >
               <div className="flex items-center justify-between">
                 <div className="min-w-0 flex-1">
                   <p className="text-xs sm:text-sm font-medium text-gray-600 truncate">{stat.title}</p>
@@ -176,7 +409,10 @@ const Dashboard: React.FC = () => {
             </div>
             <BookOpen className="h-6 w-6 sm:h-8 sm:w-8 text-blue-200" />
           </div>
-          <button className="mt-3 sm:mt-4 bg-white text-blue-600 px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg text-sm font-medium hover:bg-blue-50 transition-colors w-full sm:w-auto">
+          <button 
+            onClick={() => window.location.hash = '#logbook'}
+            className="mt-3 sm:mt-4 bg-white text-blue-600 px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg text-sm font-medium hover:bg-blue-50 transition-colors w-full sm:w-auto"
+          >
             Créer maintenant
           </button>
         </div>
@@ -189,7 +425,10 @@ const Dashboard: React.FC = () => {
             </div>
             <Calendar className="h-6 w-6 sm:h-8 sm:w-8 text-green-200" />
           </div>
-          <button className="mt-3 sm:mt-4 bg-white text-green-600 px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg text-sm font-medium hover:bg-green-50 transition-colors w-full sm:w-auto">
+          <button 
+            onClick={() => window.location.hash = '#booking'}
+            className="mt-3 sm:mt-4 bg-white text-green-600 px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg text-sm font-medium hover:bg-green-50 transition-colors w-full sm:w-auto"
+          >
             Nouveau booking
           </button>
         </div>
@@ -202,11 +441,25 @@ const Dashboard: React.FC = () => {
             </div>
             <Wrench className="h-6 w-6 sm:h-8 sm:w-8 text-orange-200" />
           </div>
-          <button className="mt-3 sm:mt-4 bg-white text-orange-600 px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg text-sm font-medium hover:bg-orange-50 transition-colors w-full sm:w-auto">
+          <button 
+            onClick={() => window.location.hash = '#maintenance'}
+            className="mt-3 sm:mt-4 bg-white text-orange-600 px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg text-sm font-medium hover:bg-orange-50 transition-colors w-full sm:w-auto"
+          >
             Nouvelle fiche
           </button>
         </div>
       </div>
+
+      {/* DataTable Modal */}
+      {selectedCard && (
+        <DataTable
+          title={tableTitle}
+          columns={tableColumns}
+          data={tableData}
+          onClose={closeTable}
+          loading={loading}
+        />
+      )}
     </div>
   );
 };

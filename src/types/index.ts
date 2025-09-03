@@ -1,13 +1,24 @@
 export interface User {
   id: string;
-  fullName: string;
+  name: string;
+  fullName?: string; // Pour compatibilité
+  firstName?: string;
+  lastName?: string;
   email?: string;
   phone?: string;
   role: UserRole;
+  status?: 'pending' | 'approved' | 'rejected' | 'active' | 'inactive';
+  department?: string;
+  position?: string;
   profilePhoto?: string;
-  isActive: boolean;
-  createdAt: Date;
+  isActive?: boolean;
+  createdAt?: Date;
+  hireDate?: Date;
+  salary?: number;
+  address?: string;
   hrData?: HRData;
+  approvedBy?: string;
+  approvedAt?: Date;
 }
 
 export interface HRData {
@@ -23,7 +34,113 @@ export interface HRData {
   payrollNumber?: string;
 }
 
-export type UserRole = 'directeur' | 'drh' | 'responsable_logistique' | 'pilote' | 'mecanicien';
+export type UserRole = 'director' | 'pilote' | 'mecanicien' | 'logisticien' | 'rh';
+
+export interface UserPermissions {
+  canViewAll: boolean;
+  canValidateAll: boolean;
+  canManageUsers: boolean;
+  canCreateBookings: boolean;
+  canFillLogbook: boolean;
+  canValidateLogbook: boolean;
+  canFillMaintenance: boolean;
+  canValidateMaintenance: boolean;
+  canViewReports: boolean;
+  canModifyUsers: boolean;
+  canApproveRegistrations: boolean;
+  canApproveUsers: boolean;
+  canManageLogbook: boolean;
+  canManageMaintenance: boolean;
+  canManageBookings: boolean;
+}
+
+export const ROLE_PERMISSIONS: Record<UserRole, UserPermissions> = {
+  director: {
+    canViewAll: true,
+    canValidateAll: true,
+    canManageUsers: true,
+    canCreateBookings: true,
+    canFillLogbook: true,
+    canValidateLogbook: true,
+    canFillMaintenance: true,
+    canValidateMaintenance: true,
+    canViewReports: true,
+    canModifyUsers: true,
+    canApproveRegistrations: true,
+    canApproveUsers: true,
+    canManageLogbook: true,
+    canManageMaintenance: true,
+    canManageBookings: true
+  },
+  pilote: {
+    canViewAll: false,
+    canValidateAll: false,
+    canManageUsers: false,
+    canCreateBookings: true,
+    canFillLogbook: true,
+    canValidateLogbook: false,
+    canFillMaintenance: false,
+    canValidateMaintenance: true,
+    canViewReports: false,
+    canModifyUsers: false,
+    canApproveRegistrations: false,
+    canApproveUsers: false,
+    canManageLogbook: true,
+    canManageMaintenance: false,
+    canManageBookings: true
+  },
+  mecanicien: {
+    canViewAll: false,
+    canValidateAll: false,
+    canManageUsers: false,
+    canCreateBookings: false,
+    canFillLogbook: false,
+    canValidateLogbook: false,
+    canFillMaintenance: true,
+    canValidateMaintenance: true,
+    canViewReports: true,
+    canModifyUsers: false,
+    canApproveRegistrations: false,
+    canApproveUsers: false,
+    canManageLogbook: false,
+    canManageMaintenance: true,
+    canManageBookings: false
+  },
+  logisticien: {
+    canViewAll: true,
+    canValidateAll: false,
+    canManageUsers: true,
+    canCreateBookings: true,
+    canFillLogbook: false,
+    canValidateLogbook: true,
+    canFillMaintenance: false,
+    canValidateMaintenance: true,
+    canViewReports: true,
+    canModifyUsers: false,
+    canApproveRegistrations: false,
+    canApproveUsers: false,
+    canManageLogbook: true,
+    canManageMaintenance: true,
+    canManageBookings: true
+  },
+  rh: {
+    canViewAll: true,
+    canValidateAll: false,
+    canManageUsers: true,
+    canCreateBookings: false,
+    canFillLogbook: false,
+    canValidateLogbook: false,
+    canFillMaintenance: false,
+    canValidateMaintenance: false,
+    canViewReports: true,
+    canModifyUsers: true,
+    canApproveRegistrations: true,
+    canApproveUsers: true,
+    canManageLogbook: true,
+    canManageMaintenance: false,
+    canManageBookings: false
+  }
+};
 
 export interface Logbook {
   id: string;
@@ -38,33 +155,26 @@ export interface Logbook {
   mechanicalIntervention: boolean;
   pilotValidated: boolean;
   logisticsValidated: boolean;
+  status?: 'pending' | 'validated' | 'in_progress';
   createdAt: Date;
+  updatedAt?: Date;
 }
 
 export interface SafetyChecklist {
-  hullCondition: boolean;
-  roofCondition: boolean;
+  lifeJackets: boolean;
   fireExtinguisher: boolean;
-  flare: boolean;
-  flashlight: boolean;
   firstAidKit: boolean;
-  circuitBreaker: boolean;
-  vhfRadio: boolean;
-  bluRadio: boolean;
-  chekesFilter: boolean;
-  buoyWithRope: boolean;
-  fogRope: boolean;
-  scoop: boolean;
-  pole: boolean;
-  oars: boolean;
-  grapple: boolean;
+  emergencyFlares: boolean;
+  radio: boolean;
+  gps: boolean;
   anchor: boolean;
-  garbageBags: boolean;
-  sufficientVests: boolean;
-  signageVisible: boolean;
-  chartsAndProcedures: boolean;
-  spotsOperational: boolean;
-  backupSpots: boolean;
+  bilgePump: boolean;
+  fuelLevel: boolean;
+  engineCheck: boolean;
+  hullInspection: boolean;
+  weatherCheck: boolean;
+  passengerBriefing: boolean;
+  emergencyProcedures: boolean;
   toolboxMeeting: boolean;
   toolboxTheme?: string;
 }
@@ -121,28 +231,38 @@ export interface Booking {
   requesterName: string;
   requesterCompany: string;
   createdAt: Date;
+  // Propriétés pour compatibilité avec api.ts
+  created_at?: string;
+  updated_at?: string;
+  departure_time?: string;
+  estimated_return_time?: string;
+  departure_location?: string;
+  destination?: string;
+  passengers?: number;
+  cargo_description?: string;
+  cargo_weight?: number;
+  purpose?: string;
+  special_requirements?: string;
+  status?: string;
 }
 
-export const LOCATIONS = [
-  'Saint-Anne',
-  'Port-Gentil',
-  'Dianogo',
-  'Batanga',
-  'Ombouée',
-  'Ignouga',
-  'Coucal',
-  'Onal'
-] as const;
-
-export const PIROGUES = [
-  'C1', 'C2', 'C3', 'C5', 'C6', 'C7', 'C8', 
-  'CBianca', 'CFlavienne', 'Cmanou'
-] as const;
+// Ces constantes sont maintenant récupérées dynamiquement depuis l'API
+// Voir les services correspondants pour les données actuelles
+export type LocationType = string;
+export type PirogueType = string;
 
 export const ROLE_LABELS: Record<UserRole, string> = {
   directeur: 'Directeur',
-  drh: 'DRH',
-  responsable_logistique: 'Responsable logistique',
   pilote: 'Pilote',
-  mecanicien: 'Mécanicien'
+  mecanicien: 'Mécanicien',
+  logisticien: 'Responsable Logistique',
+  rh: 'Ressources Humaines'
+};
+
+export const STATUS_LABELS: Record<string, string> = {
+  pending: 'En attente d\'approbation',
+  approved: 'Approuvé',
+  rejected: 'Rejeté',
+  active: 'Actif',
+  inactive: 'Inactif'
 };

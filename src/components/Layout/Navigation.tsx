@@ -6,9 +6,12 @@ import {
   Users, 
   FileText, 
   Settings,
-  BarChart3
+  BarChart3,
+  UserCheck,
+  CheckCircle
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
+import { usePermissions } from '../../hooks/usePermissions';
 
 interface NavigationProps {
   activeTab: string;
@@ -17,43 +20,62 @@ interface NavigationProps {
 
 const Navigation: React.FC<NavigationProps> = ({ activeTab, onTabChange }) => {
   const { user } = useAuth();
+  const permissions = usePermissions();
 
-  if (!user) return null;
+  console.log('Navigation - User:', user);
+  console.log('Navigation - User role:', user?.role);
+  console.log('Navigation - Permissions:', permissions);
+
+  if (!user) {
+    console.log('Navigation - No user found, returning null');
+    return null;
+  }
 
   const getAvailableTabs = () => {
-    const allTabs = [
-      { id: 'dashboard', label: 'Tableau de bord', icon: BarChart3, shortLabel: 'Dashboard' },
-      { id: 'logbook', label: 'Carnet de bord', icon: BookOpen, shortLabel: 'Carnet' },
-      { id: 'maintenance', label: 'Maintenance', icon: Wrench, shortLabel: 'Maintenance' },
-      { id: 'booking', label: 'Booking', icon: Calendar, shortLabel: 'Booking' },
-      { id: 'users', label: 'Utilisateurs', icon: Users, shortLabel: 'Users' },
-      { id: 'reports', label: 'Rapports', icon: FileText, shortLabel: 'Rapports' },
-      { id: 'profile', label: 'Profil', icon: Settings, shortLabel: 'Profil' }
-    ];
+    const tabs = [];
 
-    // Filter tabs based on user role
-    switch (user.role) {
-      case 'directeur':
-        return allTabs;
-      case 'drh':
-        return allTabs.filter(tab => 
-          ['dashboard', 'users', 'reports', 'profile'].includes(tab.id)
-        );
-      case 'responsable_logistique':
-        return allTabs.filter(tab => 
-          ['dashboard', 'logbook', 'booking', 'reports', 'profile'].includes(tab.id)
-        );
-      case 'pilote':
-        return allTabs.filter(tab => 
-          ['dashboard', 'logbook', 'profile'].includes(tab.id)
-        );
-      case 'mecanicien':
-        return allTabs.filter(tab => 
-          ['dashboard', 'maintenance', 'profile'].includes(tab.id)
-        );
-      default:
-        return [allTabs[0], allTabs[allTabs.length - 1]]; // dashboard and profile
+    // Dashboard - accessible à tous
+    tabs.push({ id: 'dashboard', label: 'Tableau de bord', icon: BarChart3, shortLabel: 'Dashboard' });
+
+    // Carnet de bord - pilotes et logisticiens
+    if (permissions.canManageLogbook) {
+      tabs.push({ id: 'logbook', label: 'Carnet de bord', icon: BookOpen, shortLabel: 'Carnet' });
     }
+
+    // Maintenance - mécaniciens et logisticiens
+    if (permissions.canManageMaintenance) {
+      tabs.push({ id: 'maintenance', label: 'Maintenance', icon: Wrench, shortLabel: 'Maintenance' });
+    }
+
+    // Validation des maintenances - pilotes, directeurs et logisticiens
+    if (permissions.canValidateMaintenance) {
+      tabs.push({ id: 'maintenance-validation', label: 'Validation Maintenance', icon: CheckCircle, shortLabel: 'Validation' });
+    }
+
+    // Booking - logisticiens et directeur
+    if (permissions.canManageBookings) {
+      tabs.push({ id: 'booking', label: 'Booking', icon: Calendar, shortLabel: 'Booking' });
+    }
+
+    // Gestion des utilisateurs - directeur seulement
+    if (permissions.canManageUsers) {
+      tabs.push({ id: 'users', label: 'Utilisateurs', icon: Users, shortLabel: 'Users' });
+    }
+
+    // Approbation des utilisateurs - RH seulement
+    if (permissions.canApproveUsers) {
+      tabs.push({ id: 'user-approval', label: 'Approbations', icon: UserCheck, shortLabel: 'Approb.' });
+    }
+
+    // Rapports - tous sauf pilotes et mécaniciens
+    if (permissions.canViewReports) {
+      tabs.push({ id: 'reports', label: 'Rapports', icon: FileText, shortLabel: 'Rapports' });
+    }
+
+    // Profil - accessible à tous
+    tabs.push({ id: 'profile', label: 'Profil', icon: Settings, shortLabel: 'Profil' });
+
+    return tabs;
   };
 
   const availableTabs = getAvailableTabs();
